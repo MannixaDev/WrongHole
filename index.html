@@ -52,6 +52,8 @@
   .home-content{padding:16px;max-width:900px;margin:0 auto;}
   .home-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;}
   .home-actions .btn{flex:1 1 160px;}
+  .home-search-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .home-search-row input{flex:1;min-width:180px;padding:12px;border-radius:8px;border:1px solid #ccc;}
   section.block{margin-bottom:28px;}
   .course-card,.round-card{
     background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);
@@ -195,6 +197,10 @@
     <button class="units-toggle" id="units-toggle">Yards</button>
   </header>
   <div class="home-content">
+    <div class="home-search-row">
+      <input type="text" id="home-course-search" placeholder="Search by course name, address, or postcode">
+      <button class="btn btn-primary" id="home-course-search-btn">Search</button>
+    </div>
     <div class="home-actions">
       <button class="btn btn-primary" id="btn-find-nearby">Find nearby courses</button>
       <button class="btn btn-ghost" id="btn-map-new-course">Map a new course</button>
@@ -713,6 +719,16 @@ function openOsmImport(){
   initOsmMap();
 }
 
+async function searchFromHome(query){
+  if(!query) return;
+  document.getElementById('osm-results').innerHTML = '';
+  document.getElementById('osm-search-input').value = query;
+  showScreen('osm-import');
+  await initOsmMap();
+  await osmSearchPlace(query);
+  await osmSearchArea();
+}
+
 async function osmGeolocate(){
   if(!navigator.geolocation){ toast('Geolocation not available'); return; }
   navigator.geolocation.getCurrentPosition(pos => {
@@ -1167,6 +1183,8 @@ function openPlayerSetup(course){
 function wireGlobalEvents(){
   // home
   document.getElementById('btn-find-nearby').addEventListener('click', openOsmImport);
+  document.getElementById('home-course-search-btn').addEventListener('click', () => searchFromHome(document.getElementById('home-course-search').value.trim()));
+  document.getElementById('home-course-search').addEventListener('keydown', e => { if(e.key === 'Enter') searchFromHome(e.target.value.trim()); });
   document.getElementById('btn-map-new-course').addEventListener('click', () => openEditor(null));
   document.getElementById('units-toggle').addEventListener('click', () => {
     const s = getSettings();
