@@ -125,6 +125,8 @@
   .hud-top-actions{display:flex;gap:8px;}
   .hud-icon-btn{background:rgba(0,0,0,.35);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:10px;padding:8px 12px;}
   .play-bottom-bar{position:absolute;left:0;right:0;bottom:0;padding:18px;background:linear-gradient(transparent,rgba(0,0,0,.6));}
+  .preview-nav-row{display:flex;gap:10px;}
+  .preview-nav-row .btn:disabled{opacity:.4;}
   .mini-scorecard{
     position:absolute;left:0;right:0;bottom:0;background:var(--cream);border-radius:16px 16px 0 0;
     max-height:60vh;overflow-y:auto;padding:14px;box-shadow:0 -4px 16px rgba(0,0,0,.3);
@@ -273,6 +275,10 @@
   </div>
   <div class="play-bottom-bar">
     <button class="btn btn-primary btn-block btn-big" id="hole-complete-btn">Hole Complete</button>
+    <div class="preview-nav-row" id="preview-nav-bar" hidden>
+      <button class="btn btn-ghost btn-block btn-big" id="preview-prev-btn">← Previous</button>
+      <button class="btn btn-primary btn-block btn-big" id="preview-next-btn">Next →</button>
+    </div>
   </div>
   <div class="mini-scorecard" id="mini-scorecard" hidden></div>
 </section>
@@ -505,10 +511,12 @@ async function renderHome(){
       </div>
       <div class="course-card-actions">
         <button class="btn btn-primary" data-play>Play</button>
+        <button class="btn btn-ghost" data-preview>Preview</button>
         <button class="btn btn-ghost" data-edit>Edit</button>
         ${course.source !== 'library' ? '<button class="btn btn-danger" data-delete>Delete</button>' : ''}
       </div>`;
     card.querySelector('[data-play]').addEventListener('click', () => openPlayerSetup(course));
+    card.querySelector('[data-preview]').addEventListener('click', () => startPreview(course));
     card.querySelector('[data-edit]').addEventListener('click', () => openEditor(course));
     const deleteBtn = card.querySelector('[data-delete]');
     if(deleteBtn){
@@ -842,7 +850,7 @@ function renderOsmResults(courses){
 /* =========================================================================
    9. PLAY MODE
    ========================================================================= */
-const playState = { course: null, round: null, currentHoleIndex: 0, map: null, markers: [] };
+const playState = { course: null, round: null, previewOnly: false, currentHoleIndex: 0, map: null, markers: [] };
 let scoreEntryTemp = [];
 
 async function initPlayMap(){
@@ -857,6 +865,7 @@ async function initPlayMap(){
 
 function startRound(course, playerNames){
   playState.course = course;
+  playState.previewOnly = false;
   playState.round = {
     id: generateId('round'),
     courseId: course.id,
@@ -868,8 +877,26 @@ function startRound(course, playerNames){
   };
   playState.currentHoleIndex = 0;
   document.getElementById('mini-scorecard').hidden = true;
+  updatePlayModeChrome();
   showScreen('play');
   initPlayMap().then(() => renderPlayHUD());
+}
+
+function startPreview(course){
+  playState.course = course;
+  playState.previewOnly = true;
+  playState.round = null;
+  playState.currentHoleIndex = 0;
+  document.getElementById('mini-scorecard').hidden = true;
+  updatePlayModeChrome();
+  showScreen('play');
+  initPlayMap().then(() => renderPlayHUD());
+}
+
+function updatePlayModeChrome(){
+  document.getElementById('hole-complete-btn').hidden = playState.previewOnly;
+  document.getElementById('preview-nav-bar').hidden = !playState.previewOnly;
+  document.getElementById('hud-scorecard-toggle').hidden = playState.previewOnly;
 }
 
 function renderPlayHUD(){
@@ -878,8 +905,13 @@ function renderPlayHUD(){
   document.getElementById('hud-par').textContent = `Par ${hole.par}`;
   const dist = (hole.tee && hole.green) ? haversineMeters(hole.tee, hole.green) : null;
   document.getElementById('hud-distance').textContent = dist == null ? 'Distance unknown' : formatDistance(dist, getSettings().units);
-  document.getElementById('hole-complete-btn').textContent =
-    playState.currentHoleIndex === playState.course.holes.length - 1 ? 'Finish Round' : 'Hole Complete';
+  if(playState.previewOnly){
+    document.getElementById('preview-prev-btn').disabled = playState.currentHoleIndex === 0;
+    document.getElementById('preview-next-btn').disabled = playState.currentHoleIndex === playState.course.holes.length - 1;
+  } else {
+    document.getElementById('hole-complete-btn').textContent =
+      playState.currentHoleIndex === playState.course.holes.length - 1 ? 'Finish Round' : 'Hole Complete';
+  }
   updatePlayMarkers(hole);
 }
 
@@ -1199,7 +1231,13 @@ function wireGlobalEvents(){
     if(!panel.hidden) renderMiniScorecard();
   });
   document.getElementById('hud-exit').addEventListener('click', () => {
-    if(confirm('Exit this round? Unsaved progress will be lost.')){ showScreen('home'); renderHome(); }
+    if(playState.previewOnly || confirm('Exit this round? Unsaved progress will be lost.')){ showScreen('home'); renderHome(); }
+  });
+  document.getElementById('preview-prev-btn').addEventListener('click', () => {
+    if(playState.currentHoleIndex > 0) jumpToHole(playState.currentHoleIndex - 1, true);
+  });
+  document.getElementById('preview-next-btn').addEventListener('click', () => {
+    if(playState.currentHoleIndex < playState.course.holes.length - 1) jumpToHole(playState.currentHoleIndex + 1, true);
   });
 
   // player setup
