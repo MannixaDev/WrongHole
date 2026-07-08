@@ -506,7 +506,7 @@ function isAdmin(){ return !!getAdminToken(); }
 function utf8ToBase64(str){ return btoa(unescape(encodeURIComponent(str))); }
 function base64ToUtf8(str){ return decodeURIComponent(escape(atob(str.replace(/\n/g, '')))); }
 
-async function publishCourseToLibrary(course){
+async function commitLibraryUpdate(mutateFn, commitMessage){
   const token = getAdminToken();
   if(!token){ toast('Enter your admin token first'); return false; }
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/contents/${GITHUB_COURSES_PATH}`;
@@ -515,16 +515,15 @@ async function publishCourseToLibrary(course){
     const getRes = await fetch(`${apiUrl}?ref=${GITHUB_BRANCH}`, { headers });
     if(!getRes.ok) throw new Error(`Could not read courses.json (${getRes.status})`);
     const file = await getRes.json();
-    const currentCourses = JSON.parse(base64ToUtf8(file.content));
-    const publishedCourse = { ...course, source: 'library' };
-    const i = currentCourses.findIndex(c => c.id === publishedCourse.id);
-    if(i >= 0) currentCourses[i] = publishedCourse; else currentCourses.push(publishedCourse);
+    const courses = JSON.parse(base64ToUtf8(file.content));
+    const updated = mutateFn(courses);
+    if(updated == null) return false;
     const putRes = await fetch(apiUrl, {
       method: 'PUT',
       headers,
       body: JSON.stringify({
-        message: `Publish course: ${publishedCourse.name}`,
-        content: utf8ToBase64(JSON.stringify(currentCourses, null, 2) + '\n'),
+        message: commitMessage,
+        content: utf8ToBase64(JSON.stringify(updated, null, 2) + '\n'),
         sha: file.sha,
         branch: GITHUB_BRANCH,
       }),
@@ -535,6 +534,23 @@ async function publishCourseToLibrary(course){
     toast('Publish failed: ' + e.message);
     return false;
   }
+}
+
+async function publishCourseToLibrary(course){
+  const publishedCourse = { ...course, source: 'library' };
+  return commitLibraryUpdate(courses => {
+    const i = courses.findIndex(c => c.id === publishedCourse.id);
+    if(i >= 0) courses[i] = publishedCourse; else courses.push(publishedCourse);
+    return courses;
+  }, `Publish course: ${publishedCourse.name}`);
+}
+
+async function removeCourseFromLibrary(courseId, courseName){
+  return commitLibraryUpdate(courses => {
+    const filtered = courses.filter(c => c.id !== courseId);
+    if(filtered.length === courses.length){ toast('Course not found in library'); return null; }
+    return filtered;
+  }, `Remove course: ${courseName || courseId}`);
 }
 
 /* =========================================================================
@@ -582,6 +598,7 @@ async function renderHome(){
         <button class="btn btn-ghost" data-preview>Preview</button>
         <button class="btn btn-ghost" data-edit>Edit</button>
         ${course.source !== 'library' ? '<button class="btn btn-danger" data-delete>Delete</button>' : ''}
+        ${(isAdmin() && course.source === 'library') ? '<button class="btn btn-danger" data-remove-library>Remove from Library</button>' : ''}
       </div>`;
     card.querySelector('[data-play]').addEventListener('click', () => openPlayerSetup(course));
     card.querySelector('[data-preview]').addEventListener('click', () => startPreview(course));
@@ -591,6 +608,19 @@ async function renderHome(){
       deleteBtn.addEventListener('click', () => {
         if(confirm(`Delete "${course.name}"? This can't be undone.`)){
           deleteLocalCourse(course.id);
+          renderHome();
+        }
+      });
+    }
+    const removeLibraryBtn = card.querySelector('[data-remove-library]');
+    if(removeLibraryBtn){
+      removeLibraryBtn.addEventListener('click', async () => {
+        if(!confirm(`Remove "${course.name}" from the shared library for ALL users? This commits directly to main.`)) return;
+        toast('Removing…');
+        const ok = await removeCourseFromLibrary(course.id, course.name);
+        if(ok){
+          libraryCoursesCache = null;
+          toast('Removed from library');
           renderHome();
         }
       });
