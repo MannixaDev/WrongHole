@@ -441,6 +441,9 @@ function upsertLocalCourse(course){
   if(i >= 0) list[i] = course; else list.push(course);
   saveLocalCourses(list);
 }
+function deleteLocalCourse(id){
+  saveLocalCourses(getLocalCourses().filter(c => c.id !== id));
+}
 
 function getRounds(){ return readJSON(LS_KEYS.rounds, []); }
 function saveRound(round){ const list = getRounds(); list.unshift(round); writeJSON(LS_KEYS.rounds, list.slice(0, 50)); }
@@ -503,9 +506,19 @@ async function renderHome(){
       <div class="course-card-actions">
         <button class="btn btn-primary" data-play>Play</button>
         <button class="btn btn-ghost" data-edit>Edit</button>
+        ${course.source !== 'library' ? '<button class="btn btn-danger" data-delete>Delete</button>' : ''}
       </div>`;
     card.querySelector('[data-play]').addEventListener('click', () => openPlayerSetup(course));
     card.querySelector('[data-edit]').addEventListener('click', () => openEditor(course));
+    const deleteBtn = card.querySelector('[data-delete]');
+    if(deleteBtn){
+      deleteBtn.addEventListener('click', () => {
+        if(confirm(`Delete "${course.name}"? This can't be undone.`)){
+          deleteLocalCourse(course.id);
+          renderHome();
+        }
+      });
+    }
     list.appendChild(card);
   });
   renderRecentRounds();
