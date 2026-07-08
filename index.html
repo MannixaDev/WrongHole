@@ -91,6 +91,9 @@
   .tee-chip.active{border-color:var(--green-primary);color:var(--green-primary);}
   .tee-chip-remove{font-weight:400;color:#999;}
   .tee-chip-add{background:transparent;border:1px dashed #999;color:#666;}
+  .amenity-add-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
+  .amenity-add-row button{flex:1;min-width:90px;font-size:.8rem;padding:8px 6px;}
+  .amenity-row input[type="text"]{flex:1;border:1px solid #ccc;border-radius:6px;padding:4px 6px;font-size:.85rem;min-width:0;}
   .sidebar{width:100%;background:var(--cream);padding:10px;overflow-y:auto;}
   @media(min-width:860px){ .sidebar{width:320px;} }
   .hole-row{
@@ -266,6 +269,13 @@
       <h3>Holes</h3>
       <div id="editor-hole-list"></div>
       <button class="btn btn-ghost btn-block" id="editor-add-hole">+ Add hole</button>
+      <h3 style="margin-top:20px;">Amenities</h3>
+      <div id="editor-amenity-list"></div>
+      <div class="amenity-add-row">
+        <button class="btn btn-ghost" data-add-amenity="proshop">+ 🏪 Pro Shop</button>
+        <button class="btn btn-ghost" data-add-amenity="toilet">+ 🚻 Toilet</button>
+        <button class="btn btn-ghost" data-add-amenity="bar">+ 🍺 Bar</button>
+      </div>
     </div>
   </div>
 </section>
@@ -313,6 +323,7 @@
       <button class="btn btn-ghost btn-block btn-big" id="preview-prev-btn">← Previous</button>
       <button class="btn btn-primary btn-block btn-big" id="preview-next-btn">Next →</button>
     </div>
+    <button class="btn btn-primary btn-block btn-big" id="intro-continue-btn" hidden>Continue to Hole 1 →</button>
   </div>
   <div class="mini-scorecard" id="mini-scorecard" hidden></div>
 </section>
@@ -752,10 +763,13 @@ function renderRecentRounds(){
 /* =========================================================================
    7. COURSE EDITOR
    ========================================================================= */
-const editorState = { course: null, activePinType: 'tee', activeTeeIndex: 0, activeHoleIndex: 0, map: null, markers: [] };
+const editorState = { course: null, activePinType: 'tee', activeTeeIndex: 0, activeAmenityIndex: -1, activeHoleIndex: 0, map: null, markers: [] };
+const AMENITY_ICONS = { proshop: '🏪', toilet: '🚻', bar: '🍺' };
+const AMENITY_COLORS = { proshop: '#3b6fd9', toilet: '#888888', bar: '#a06cd5' };
+const AMENITY_DEFAULT_NAMES = { proshop: 'Pro Shop', toilet: 'Toilets', bar: 'Bar' };
 
 function emptyHole(number){ return { number, par: 4, tees: [{ name: 'Tee', lat: null, lng: null }], green: null, dogleg: null }; }
-function newEmptyCourse(){ return { id: generateId('local'), name: 'New Course', source: 'local', holes: [ emptyHole(1) ] }; }
+function newEmptyCourse(){ return { id: generateId('local'), name: 'New Course', source: 'local', holes: [ emptyHole(1) ], amenities: [] }; }
 
 function normalizeHole(hole){
   if(!hole.tees){
@@ -766,6 +780,7 @@ function normalizeHole(hole){
 }
 function normalizeCourse(course){
   course.holes.forEach(normalizeHole);
+  if(!course.amenities) course.amenities = [];
   return course;
 }
 function getSelectedTeePoint(hole, teeName){
@@ -782,12 +797,45 @@ function openEditor(course){
   editorState.activeHoleIndex = 0;
   editorState.activePinType = 'tee';
   editorState.activeTeeIndex = 0;
+  editorState.activeAmenityIndex = -1;
   document.getElementById('editor-course-name').value = editorState.course.name;
   document.getElementById('editor-publish').hidden = !isAdmin();
   renderPinTypeButtons();
   renderHoleSidebar();
+  renderAmenityList();
   showScreen('editor');
   initEditorMap();
+}
+
+function renderAmenityList(){
+  const wrap = document.getElementById('editor-amenity-list');
+  wrap.innerHTML = '';
+  editorState.course.amenities.forEach((a, i) => {
+    const row = document.createElement('div');
+    row.className = 'hole-row amenity-row' + (editorState.activePinType === 'amenity' && editorState.activeAmenityIndex === i ? ' active' : '');
+    row.innerHTML = `
+      <span>${AMENITY_ICONS[a.type] || '📍'}</span>
+      <input type="text" value="${escapeHtml(a.name)}">
+      <span class="dot ${a.lat != null ? 'set-tee' : ''}"></span>
+      <span class="spacer"></span>
+      <button class="icon-btn" data-delete-amenity title="Remove">🗑</button>`;
+    row.addEventListener('click', e => {
+      if(e.target.closest('button') || e.target.tagName === 'INPUT') return;
+      editorState.activePinType = 'amenity';
+      editorState.activeAmenityIndex = i;
+      renderPinTypeButtons();
+      renderAmenityList();
+    });
+    row.querySelector('input').addEventListener('input', e => { a.name = e.target.value; });
+    row.querySelector('[data-delete-amenity]').addEventListener('click', () => {
+      editorState.course.amenities.splice(i, 1);
+      if(editorState.activeAmenityIndex === i){ editorState.activePinType = 'tee'; editorState.activeAmenityIndex = -1; }
+      renderPinTypeButtons();
+      renderAmenityList();
+      updateEditorMarkers();
+    });
+    wrap.appendChild(row);
+  });
 }
 
 function renderPinTypeButtons(){
@@ -918,6 +966,25 @@ function renderManualCoordFields(){
     });
     panel.appendChild(row);
   });
+  editorState.course.amenities.forEach(a => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `
+      <label>${AMENITY_ICONS[a.type] || '📍'} ${escapeHtml(a.name)}</label>
+      <input type="number" step="0.000001" placeholder="lat" value="${a.lat ?? ''}">
+      <input type="number" step="0.000001" placeholder="lng" value="${a.lng ?? ''}">
+      <button class="btn btn-ghost" style="padding:6px 10px;min-height:auto;">Set</button>`;
+    const [latInput, lngInput] = row.querySelectorAll('input');
+    row.querySelector('button').addEventListener('click', () => {
+      const lat = parseFloat(latInput.value), lng = parseFloat(lngInput.value);
+      if(Number.isFinite(lat) && Number.isFinite(lng)){
+        a.lat = lat; a.lng = lng;
+        renderAmenityList();
+        toast(`${a.name} set`);
+      }
+    });
+    panel.appendChild(row);
+  });
   document.getElementById('editor-map-wrap').after(panel);
 }
 
@@ -935,6 +1002,10 @@ async function initEditorMap(){
     if(editorState.activePinType === 'tee'){
       const tee = hole.tees[editorState.activeTeeIndex];
       if(tee){ tee.lat = point.lat; tee.lng = point.lng; }
+    } else if(editorState.activePinType === 'amenity'){
+      const amenity = editorState.course.amenities[editorState.activeAmenityIndex];
+      if(amenity){ amenity.lat = point.lat; amenity.lng = point.lng; }
+      renderAmenityList();
     } else {
       hole[editorState.activePinType] = point;
     }
@@ -962,6 +1033,9 @@ async function updateEditorMarkers(){
   }
   if(hole.green) editorState.markers.push(await createMarker(editorState.map, hole.green, '#c0392b'));
   if(hole.dogleg) editorState.markers.push(await createMarker(editorState.map, hole.dogleg, '#caa23a'));
+  for(const a of editorState.course.amenities){
+    if(a.lat != null) editorState.markers.push(await createMarker(editorState.map, { lat: a.lat, lng: a.lng }, AMENITY_COLORS[a.type] || '#666'));
+  }
 }
 
 async function openCameraPreview(hole){
@@ -1147,14 +1221,14 @@ function renderOsmResults(courses){
 /* =========================================================================
    9. PLAY MODE
    ========================================================================= */
-const playState = { course: null, round: null, previewOnly: false, currentHoleIndex: 0, map: null, markers: [], gpsWatchId: null, livePosition: null, selectedTeeName: null };
+const playState = { course: null, round: null, previewOnly: false, currentHoleIndex: 0, map: null, markers: [], gpsWatchId: null, livePosition: null, selectedTeeName: null, showingIntro: false };
 
 function startGpsWatch(){
   if(!navigator.geolocation) return;
   playState.gpsWatchId = navigator.geolocation.watchPosition(
     pos => {
       playState.livePosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      updateDistanceReadout();
+      if(!playState.showingIntro) updateDistanceReadout();
     },
     () => { /* denied/unavailable — silently keep using static distance */ },
     { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
@@ -1170,14 +1244,56 @@ function stopGpsWatch(){
 let scoreEntryTemp = [];
 let statsEntryTemp = [];
 
+function findAmenity(course, type){
+  return (course.amenities || []).find(a => a.type === type && a.lat != null);
+}
+function computeProShopIntro(course, teeName){
+  const proShop = findAmenity(course, 'proshop');
+  const firstHole = course.holes[0];
+  const firstTee = firstHole ? getSelectedTeePoint(firstHole, teeName) : null;
+  if(!proShop || !firstTee) return null;
+  const proShopPoint = { lat: proShop.lat, lng: proShop.lng };
+  return {
+    camera: { center: proShopPoint, heading: bearingDegrees(proShopPoint, firstTee), tilt: 45, zoom: 18 },
+    distance: haversineMeters(proShopPoint, firstTee),
+    proShopPoint,
+    firstTee,
+  };
+}
+
+function showProShopIntro(intro){
+  playState.showingIntro = true;
+  document.getElementById('hud-hole-num').textContent = '🏪';
+  document.getElementById('hud-par').textContent = 'Walk to Hole 1';
+  document.getElementById('hud-distance').textContent = formatDistance(intro.distance, getSettings().units);
+  document.getElementById('hud-plays-like').textContent = '';
+  document.getElementById('hud-club-suggestion').textContent = '';
+  document.getElementById('hud-tee-select').hidden = true;
+  document.getElementById('hole-complete-btn').hidden = true;
+  document.getElementById('preview-nav-bar').hidden = true;
+  document.getElementById('intro-continue-btn').hidden = false;
+}
+
+function continueFromIntro(){
+  playState.showingIntro = false;
+  document.getElementById('intro-continue-btn').hidden = true;
+  updatePlayModeChrome();
+  jumpToHole(0, true);
+}
+
 async function initPlayMap(){
   const wrap = document.getElementById('play-map-wrap');
   wrap.innerHTML = '';
   if(!MAPS_CONFIGURED){ mapsBanner(wrap); return; }
   const mapDiv = document.createElement('div'); mapDiv.className = 'map-el'; wrap.appendChild(mapDiv);
+  const intro = computeProShopIntro(playState.course, playState.selectedTeeName);
   const hole = playState.course.holes[0];
-  const camera = computeCameraForHole(hole, playState.selectedTeeName) || { center: { lat: 51.0, lng: -1.3 }, zoom: 17, heading: 0, tilt: 0 };
+  const camera = intro ? intro.camera : (computeCameraForHole(hole, playState.selectedTeeName) || { center: { lat: 51.0, lng: -1.3 }, zoom: 17, heading: 0, tilt: 0 });
   playState.map = await createMap(mapDiv, camera);
+  if(intro){
+    playState.markers.push(await createMarker(playState.map, intro.proShopPoint, AMENITY_COLORS.proshop));
+    playState.markers.push(await createMarker(playState.map, intro.firstTee, '#1e5631'));
+  }
 }
 
 function startRound(course, playerNames, teeName){
@@ -1202,7 +1318,10 @@ function startRound(course, playerNames, teeName){
   updatePlayModeChrome();
   showScreen('play');
   startGpsWatch();
-  initPlayMap().then(() => renderPlayHUD());
+  initPlayMap().then(() => {
+    const intro = computeProShopIntro(playState.course, playState.selectedTeeName);
+    if(intro) showProShopIntro(intro); else renderPlayHUD();
+  });
 }
 
 function startPreview(course){
@@ -1215,7 +1334,10 @@ function startPreview(course){
   document.getElementById('mini-scorecard').hidden = true;
   updatePlayModeChrome();
   showScreen('play');
-  initPlayMap().then(() => renderPlayHUD());
+  initPlayMap().then(() => {
+    const intro = computeProShopIntro(playState.course, playState.selectedTeeName);
+    if(intro) showProShopIntro(intro); else renderPlayHUD();
+  });
 }
 
 function updatePlayModeChrome(){
@@ -1683,6 +1805,19 @@ function wireGlobalEvents(){
     renderPinTypeButtons();
     recenterEditorMapOnActiveHole();
   });
+  document.querySelectorAll('[data-add-amenity]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const type = btn.dataset.addAmenity;
+      const existingOfType = editorState.course.amenities.filter(a => a.type === type).length;
+      const name = existingOfType === 0 ? AMENITY_DEFAULT_NAMES[type] : `${AMENITY_DEFAULT_NAMES[type]} ${existingOfType + 1}`;
+      editorState.course.amenities.push({ type, name, lat: null, lng: null });
+      editorState.activePinType = 'amenity';
+      editorState.activeAmenityIndex = editorState.course.amenities.length - 1;
+      renderPinTypeButtons();
+      renderAmenityList();
+      renderManualCoordFields();
+    });
+  });
   function setHoleCount(n){
     const holes = editorState.course.holes;
     while(holes.length < n) holes.push(emptyHole(holes.length + 1));
@@ -1768,6 +1903,7 @@ function wireGlobalEvents(){
     playState.selectedTeeName = e.target.value;
     jumpToHole(playState.currentHoleIndex, false);
   });
+  document.getElementById('intro-continue-btn').addEventListener('click', continueFromIntro);
   document.getElementById('preview-prev-btn').addEventListener('click', () => {
     if(playState.currentHoleIndex > 0) jumpToHole(playState.currentHoleIndex - 1, true);
   });
