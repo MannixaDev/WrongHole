@@ -152,6 +152,14 @@
   .club-row input[type="number"]{width:80px;padding:8px;border-radius:6px;border:1px solid #ccc;}
   .club-row .club-unit{font-size:.8rem;color:#666;width:36px;}
   .club-row .btn-remove-player{font-size:1.1rem;}
+  .stats-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:0 0 10px;font-size:.8rem;}
+  .toggle-pair{display:flex;gap:4px;}
+  .toggle-btn{padding:5px 8px;border-radius:6px;border:1px solid #ccc;background:#fff;font-size:.75rem;}
+  .toggle-btn.active-hit{background:var(--green-primary);color:#fff;border-color:var(--green-primary);}
+  .toggle-btn.active-miss{background:var(--flag-red);color:#fff;border-color:var(--flag-red);}
+  .putts-stepper{display:flex;align-items:center;gap:6px;font-size:.8rem;}
+  .putts-stepper .stepper-btn{width:26px;height:26px;font-size:.9rem;}
+  #stats-toggle-btn.stats-off{opacity:.5;}
   .btn-remove-player{background:none;border:none;color:var(--flag-red);font-size:1.1rem;}
   .score-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #ddd;}
   .score-row-name{flex:1;font-weight:600;}
@@ -202,6 +210,7 @@
   <header class="header-bar">
     <h1>⛳ WrongHole</h1>
     <div style="display:flex;gap:8px;">
+      <button class="units-toggle" id="stats-toggle-btn" title="Track fairways/GIR/putts">📊</button>
       <button class="units-toggle" id="my-clubs-btn" title="My Clubs">🏌</button>
       <button class="units-toggle" id="admin-settings-btn" title="Admin">⚙</button>
       <button class="units-toggle" id="units-toggle">Yards</button>
@@ -318,6 +327,7 @@
       <input type="text" id="summary-share-output" readonly>
     </div>
     <div id="summary-table-wrap"></div>
+    <div id="summary-stats-wrap"></div>
   </div>
 </section>
 
@@ -481,8 +491,12 @@ const LS_KEYS = { localCourses: 'golf.courses.local', rounds: 'golf.rounds', set
 function readJSON(key, fallback){ try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }catch{ return fallback; } }
 function writeJSON(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
 
-function getSettings(){ return Object.assign({ units: 'yards' }, readJSON(LS_KEYS.settings, {})); }
+function getSettings(){ return Object.assign({ units: 'yards', trackStats: false }, readJSON(LS_KEYS.settings, {})); }
 function saveSettings(s){ writeJSON(LS_KEYS.settings, s); }
+
+function updateStatsToggleBtn(){
+  document.getElementById('stats-toggle-btn').classList.toggle('stats-off', !getSettings().trackStats);
+}
 
 function getClubs(){ return readJSON(LS_KEYS.clubs, []); }
 function saveClubs(list){ writeJSON(LS_KEYS.clubs, list); }
@@ -1040,6 +1054,7 @@ function renderOsmResults(courses){
    ========================================================================= */
 const playState = { course: null, round: null, previewOnly: false, currentHoleIndex: 0, map: null, markers: [] };
 let scoreEntryTemp = [];
+let statsEntryTemp = [];
 
 async function initPlayMap(){
   const wrap = document.getElementById('play-map-wrap');
@@ -1062,6 +1077,8 @@ function startRound(course, playerNames){
     players: playerNames.map(name => ({ name })),
     holes: course.holes.map(h => ({ number: h.number, par: h.par })),
     scores: course.holes.map(() => playerNames.map(() => null)),
+    statsTracked: getSettings().trackStats,
+    stats: course.holes.map(() => playerNames.map(() => ({ fairwayHit: null, gir: null, putts: null }))),
   };
   playState.currentHoleIndex = 0;
   document.getElementById('mini-scorecard').hidden = true;
@@ -1145,11 +1162,56 @@ function jumpToHole(index, animate){
   renderMiniScorecard();
 }
 
+function buildStatsRow(hole, stats){
+  const statsRow = document.createElement('div');
+  statsRow.className = 'stats-row';
+  if(stats.putts == null) stats.putts = 2;
+  statsRow.innerHTML = `
+    ${hole.par !== 3 ? `
+    <div class="toggle-pair" data-field="fairwayHit">
+      <button class="toggle-btn${stats.fairwayHit === true ? ' active-hit' : ''}" data-value="true">Fairway ✓</button>
+      <button class="toggle-btn${stats.fairwayHit === false ? ' active-miss' : ''}" data-value="false">Fairway ✗</button>
+    </div>` : ''}
+    <div class="toggle-pair" data-field="gir">
+      <button class="toggle-btn${stats.gir === true ? ' active-hit' : ''}" data-value="true">GIR ✓</button>
+      <button class="toggle-btn${stats.gir === false ? ' active-miss' : ''}" data-value="false">GIR ✗</button>
+    </div>
+    <div class="putts-stepper">
+      <span>Putts</span>
+      <button class="stepper-btn" data-putts-delta="-1">−</button>
+      <span class="stepper-value" data-putts-value>${stats.putts}</span>
+      <button class="stepper-btn" data-putts-delta="1">+</button>
+    </div>`;
+  statsRow.querySelectorAll('.toggle-pair').forEach(pair => {
+    const field = pair.dataset.field;
+    pair.querySelectorAll('.toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = btn.dataset.value === 'true';
+        stats[field] = val;
+        pair.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active-hit', 'active-miss'));
+        btn.classList.add(val ? 'active-hit' : 'active-miss');
+      });
+    });
+  });
+  const puttsValueEl = statsRow.querySelector('[data-putts-value]');
+  statsRow.querySelector('[data-putts-delta="-1"]').addEventListener('click', () => {
+    stats.putts = Math.max(0, stats.putts - 1);
+    puttsValueEl.textContent = stats.putts;
+  });
+  statsRow.querySelector('[data-putts-delta="1"]').addEventListener('click', () => {
+    stats.putts = stats.putts + 1;
+    puttsValueEl.textContent = stats.putts;
+  });
+  return statsRow;
+}
+
 function openScoreEntry(){
   const holeIndex = playState.currentHoleIndex;
   const hole = playState.course.holes[holeIndex];
   const scores = playState.round.scores[holeIndex];
   scoreEntryTemp = playState.round.players.map((_, pi) => scores[pi] ?? hole.par);
+  const trackStats = playState.round.statsTracked;
+  statsEntryTemp = trackStats ? playState.round.stats[holeIndex].map(s => ({ ...s })) : [];
 
   const rows = document.getElementById('score-entry-rows');
   rows.innerHTML = '';
@@ -1178,6 +1240,7 @@ function openScoreEntry(){
       valueEl.textContent = '–';
     });
     rows.appendChild(row);
+    if(trackStats) rows.appendChild(buildStatsRow(hole, statsEntryTemp[pi]));
   });
   document.getElementById('score-entry-title').textContent = `Hole ${hole.number} · Par ${hole.par}`;
   document.getElementById('score-entry-next-btn').textContent =
@@ -1188,6 +1251,9 @@ function openScoreEntry(){
 function confirmScoreEntry(){
   const holeIndex = playState.currentHoleIndex;
   playState.round.scores[holeIndex] = scoreEntryTemp.slice();
+  if(playState.round.statsTracked){
+    playState.round.stats[holeIndex] = statsEntryTemp.slice();
+  }
   closeModal('modal-score-entry');
   if(holeIndex < playState.course.holes.length - 1){
     jumpToHole(holeIndex + 1, true);
@@ -1238,7 +1304,36 @@ function openSummary(round, { readOnly = false } = {}){
   document.getElementById('summary-readonly-banner').hidden = !readOnly;
   document.getElementById('summary-share-result').hidden = true;
   renderSummaryTable();
+  renderStatsBlock();
   showScreen('summary');
+}
+
+function renderStatsBlock(){
+  const round = currentSummaryRound;
+  const wrap = document.getElementById('summary-stats-wrap');
+  if(!round.statsTracked || !round.stats){ wrap.innerHTML = ''; return; }
+  let html = '<h3 style="margin-top:16px;">Stats</h3><table class="scorecard"><thead><tr><th>Player</th><th>Fairways</th><th>GIR</th><th>Putts</th></tr></thead><tbody>';
+  round.players.forEach((p, pi) => {
+    let fwAttempts = 0, fwHits = 0, girAttempts = 0, girHits = 0, puttsSum = 0, puttsCount = 0;
+    round.holes.forEach((h, hi) => {
+      const s = round.stats[hi] && round.stats[hi][pi];
+      if(!s) return;
+      if(h.par !== 3 && s.fairwayHit != null){ fwAttempts++; if(s.fairwayHit) fwHits++; }
+      if(s.gir != null){ girAttempts++; if(s.gir) girHits++; }
+      if(s.putts != null){ puttsSum += s.putts; puttsCount++; }
+    });
+    const fwPct = fwAttempts ? Math.round(100 * fwHits / fwAttempts) : null;
+    const girPct = girAttempts ? Math.round(100 * girHits / girAttempts) : null;
+    const puttsAvg = puttsCount ? (puttsSum / puttsCount).toFixed(1) : null;
+    html += `<tr>
+      <td class="hole-label">${escapeHtml(p.name)}</td>
+      <td>${fwPct != null ? `${fwPct}% (${fwHits}/${fwAttempts})` : '–'}</td>
+      <td>${girPct != null ? `${girPct}% (${girHits}/${girAttempts})` : '–'}</td>
+      <td>${puttsAvg != null ? `${puttsSum} total, ${puttsAvg} avg` : '–'}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
 }
 
 function renderSummaryTable(){
@@ -1368,6 +1463,14 @@ function wireGlobalEvents(){
     if(!document.getElementById('screen-play').hidden) renderPlayHUD();
   });
   document.getElementById('units-toggle').textContent = getSettings().units === 'yards' ? 'Yards' : 'Metres';
+  document.getElementById('stats-toggle-btn').addEventListener('click', () => {
+    const s = getSettings();
+    s.trackStats = !s.trackStats;
+    saveSettings(s);
+    updateStatsToggleBtn();
+    toast(s.trackStats ? 'Tracking fairways/GIR/putts' : 'Stat tracking off');
+  });
+  updateStatsToggleBtn();
 
   // editor
   document.getElementById('editor-back').addEventListener('click', () => { showScreen('home'); renderHome(); });
