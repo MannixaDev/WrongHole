@@ -147,6 +147,11 @@
   .player-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
   .player-row input{flex:1;padding:10px;border-radius:8px;border:1px solid #ccc;}
   #admin-token-input{width:100%;padding:10px;border-radius:8px;border:1px solid #ccc;font-family:monospace;font-size:.85rem;}
+  .club-row{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
+  .club-row input[type="text"]{flex:1;padding:8px;border-radius:6px;border:1px solid #ccc;}
+  .club-row input[type="number"]{width:80px;padding:8px;border-radius:6px;border:1px solid #ccc;}
+  .club-row .club-unit{font-size:.8rem;color:#666;width:36px;}
+  .club-row .btn-remove-player{font-size:1.1rem;}
   .btn-remove-player{background:none;border:none;color:var(--flag-red);font-size:1.1rem;}
   .score-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #ddd;}
   .score-row-name{flex:1;font-weight:600;}
@@ -197,6 +202,7 @@
   <header class="header-bar">
     <h1>⛳ WrongHole</h1>
     <div style="display:flex;gap:8px;">
+      <button class="units-toggle" id="my-clubs-btn" title="My Clubs">🏌</button>
       <button class="units-toggle" id="admin-settings-btn" title="Admin">⚙</button>
       <button class="units-toggle" id="units-toggle">Yards</button>
     </div>
@@ -278,6 +284,7 @@
       <div class="hole-meta">
         <div id="hud-par">Par 4</div>
         <div id="hud-distance">— </div>
+        <div id="hud-club-suggestion"></div>
       </div>
     </div>
     <div class="hud-top-actions">
@@ -372,6 +379,19 @@
   </div>
 </div>
 
+<div class="modal" id="modal-my-clubs" hidden>
+  <div class="modal-content">
+    <h2>My Clubs</h2>
+    <p style="font-size:.85rem;color:#555;">Enter how far each club carries you. Leave a distance blank to skip it. Used to suggest a club during Play Mode and course previews.</p>
+    <div id="club-rows"></div>
+    <button class="btn btn-ghost btn-block" id="club-add-row">+ Add club</button>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="club-cancel">Cancel</button>
+      <button class="btn btn-primary" id="club-save">Save</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -443,6 +463,7 @@ function bearingDegrees(a, b){
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 function metersToYards(m){ return m * 1.09361; }
+function yardsToMeters(y){ return y / 1.09361; }
 function formatDistance(m, units){
   if(m == null) return '—';
   return units === 'metres' ? `${Math.round(m)} m` : `${Math.round(metersToYards(m))} yd`;
@@ -456,12 +477,22 @@ function computeCameraForHole(hole){
 /* =========================================================================
    4. STORAGE — localStorage + courses.json
    ========================================================================= */
-const LS_KEYS = { localCourses: 'golf.courses.local', rounds: 'golf.rounds', settings: 'golf.settings' };
+const LS_KEYS = { localCourses: 'golf.courses.local', rounds: 'golf.rounds', settings: 'golf.settings', clubs: 'golf.clubs' };
 function readJSON(key, fallback){ try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }catch{ return fallback; } }
 function writeJSON(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
 
 function getSettings(){ return Object.assign({ units: 'yards' }, readJSON(LS_KEYS.settings, {})); }
 function saveSettings(s){ writeJSON(LS_KEYS.settings, s); }
+
+function getClubs(){ return readJSON(LS_KEYS.clubs, []); }
+function saveClubs(list){ writeJSON(LS_KEYS.clubs, list); }
+function suggestClub(distanceMeters){
+  const candidates = getClubs().filter(c => c.name && c.distanceMeters != null);
+  if(!candidates.length || distanceMeters == null) return null;
+  return candidates.reduce((best, c) =>
+    Math.abs(c.distanceMeters - distanceMeters) < Math.abs(best.distanceMeters - distanceMeters) ? c : best
+  ).name;
+}
 
 function getLocalCourses(){ return readJSON(LS_KEYS.localCourses, []); }
 function saveLocalCourses(list){ writeJSON(LS_KEYS.localCourses, list); }
@@ -492,6 +523,53 @@ async function loadCourseLibrary(){
 }
 function generateId(prefix){ return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`; }
 function escapeHtml(str){ const d = document.createElement('div'); d.textContent = str ?? ''; return d.innerHTML; }
+
+/* ---- My Clubs ---- */
+const DEFAULT_CLUB_NAMES = ['Driver','3 Wood','5 Wood','Hybrid','4 Iron','5 Iron','6 Iron','7 Iron','8 Iron','9 Iron','PW','GW','SW','LW','Putter'];
+
+function addClubRow(name = '', distanceMeters = null){
+  const units = getSettings().units;
+  const wrap = document.getElementById('club-rows');
+  const row = document.createElement('div');
+  row.className = 'club-row';
+  const displayValue = distanceMeters != null ? Math.round(units === 'metres' ? distanceMeters : metersToYards(distanceMeters)) : '';
+  row.innerHTML = `
+    <input type="text" class="club-name" placeholder="Club name" value="${escapeHtml(name)}">
+    <input type="number" class="club-distance" placeholder="dist" value="${displayValue}">
+    <span class="club-unit">${units === 'metres' ? 'm' : 'yd'}</span>
+    <button class="btn-remove-player" type="button">✕</button>`;
+  row.querySelector('.btn-remove-player').addEventListener('click', () => row.remove());
+  wrap.appendChild(row);
+}
+
+function renderClubRows(){
+  const wrap = document.getElementById('club-rows');
+  wrap.innerHTML = '';
+  const saved = getClubs();
+  const byName = new Map(saved.map(c => [c.name, c.distanceMeters]));
+  const names = saved.length ? saved.map(c => c.name) : DEFAULT_CLUB_NAMES;
+  names.forEach(name => addClubRow(name, byName.get(name) ?? null));
+}
+
+function openClubsModal(){
+  renderClubRows();
+  openModal('modal-my-clubs');
+}
+
+function saveClubsFromModal(){
+  const units = getSettings().units;
+  const clubs = [...document.querySelectorAll('#club-rows .club-row')].map(row => {
+    const name = row.querySelector('.club-name').value.trim();
+    const distRaw = row.querySelector('.club-distance').value;
+    if(!name || distRaw === '') return null;
+    const distNum = parseFloat(distRaw);
+    if(!Number.isFinite(distNum)) return null;
+    return { name, distanceMeters: units === 'metres' ? distNum : yardsToMeters(distNum) };
+  }).filter(Boolean);
+  saveClubs(clubs);
+  closeModal('modal-my-clubs');
+  toast('Clubs saved');
+}
 
 /* ---- Admin publish (direct-to-main via GitHub Contents API) ---- */
 const GITHUB_REPO_OWNER = 'MannixaDev';
@@ -1015,6 +1093,8 @@ function renderPlayHUD(){
   document.getElementById('hud-par').textContent = `Par ${hole.par}`;
   const dist = (hole.tee && hole.green) ? haversineMeters(hole.tee, hole.green) : null;
   document.getElementById('hud-distance').textContent = dist == null ? 'Distance unknown' : formatDistance(dist, getSettings().units);
+  const suggestion = suggestClub(dist);
+  document.getElementById('hud-club-suggestion').textContent = suggestion ? `Suggested: ${suggestion}` : '';
   if(playState.previewOnly){
     document.getElementById('preview-prev-btn').disabled = playState.currentHoleIndex === 0;
     document.getElementById('preview-next-btn').disabled = playState.currentHoleIndex === playState.course.holes.length - 1;
@@ -1343,6 +1423,10 @@ function wireGlobalEvents(){
     document.getElementById('admin-token-input').value = getAdminToken();
     openModal('modal-admin-settings');
   });
+  document.getElementById('my-clubs-btn').addEventListener('click', openClubsModal);
+  document.getElementById('club-add-row').addEventListener('click', () => addClubRow());
+  document.getElementById('club-cancel').addEventListener('click', () => closeModal('modal-my-clubs'));
+  document.getElementById('club-save').addEventListener('click', saveClubsFromModal);
   document.getElementById('admin-token-save').addEventListener('click', () => {
     setAdminToken(document.getElementById('admin-token-input').value.trim());
     closeModal('modal-admin-settings');
