@@ -297,6 +297,7 @@
       <div class="hole-meta">
         <div id="hud-par">Par 4</div>
         <div id="hud-distance">— </div>
+        <div id="hud-plays-like"></div>
         <div id="hud-club-suggestion"></div>
       </div>
     </div>
@@ -1223,6 +1224,44 @@ function updatePlayModeChrome(){
   document.getElementById('hud-scorecard-toggle').hidden = playState.previewOnly;
 }
 
+const elevationDiffCache = new Map();
+async function getElevationDiff(teePoint, greenPoint){
+  if(!MAPS_CONFIGURED || !teePoint || !greenPoint) return null;
+  const key = `${teePoint.lat},${teePoint.lng}|${greenPoint.lat},${greenPoint.lng}`;
+  if(elevationDiffCache.has(key)) return elevationDiffCache.get(key);
+  try{
+    const { ElevationService } = await google.maps.importLibrary('elevation');
+    const response = await new ElevationService().getElevationForLocations({ locations: [teePoint, greenPoint] });
+    const [teeElev, greenElev] = response.results.map(r => r.elevation);
+    const diff = greenElev - teeElev;
+    elevationDiffCache.set(key, diff);
+    return diff;
+  }catch{
+    elevationDiffCache.set(key, null);
+    return null;
+  }
+}
+
+async function updatePlaysLikeAndSuggestion(dist, teePoint, greenPoint){
+  const requestHoleIndex = playState.currentHoleIndex;
+  const requestTeeName = playState.selectedTeeName;
+  let effectiveDist = dist;
+  const diff = await getElevationDiff(teePoint, greenPoint);
+  if(playState.currentHoleIndex !== requestHoleIndex || playState.selectedTeeName !== requestTeeName) return;
+  if(diff != null && dist != null){
+    effectiveDist = dist + diff;
+    const units = getSettings().units;
+    let label = 'flat';
+    if(diff > 1) label = `${formatDistance(diff, units)} uphill`;
+    else if(diff < -1) label = `${formatDistance(Math.abs(diff), units)} downhill`;
+    document.getElementById('hud-plays-like').textContent = `Plays like: ${formatDistance(effectiveDist, units)} (${label})`;
+  } else {
+    document.getElementById('hud-plays-like').textContent = '';
+  }
+  const suggestion = suggestClub(effectiveDist);
+  document.getElementById('hud-club-suggestion').textContent = suggestion ? `Suggested: ${suggestion}` : '';
+}
+
 function updateDistanceReadout(){
   const hole = playState.course.holes[playState.currentHoleIndex];
   const teePoint = getSelectedTeePoint(hole, playState.selectedTeeName);
@@ -1235,8 +1274,10 @@ function updateDistanceReadout(){
   }
   document.getElementById('hud-distance').textContent =
     dist == null ? 'Distance unknown' : `${formatDistance(dist, getSettings().units)}${live ? ' (live)' : ''}`;
+  document.getElementById('hud-plays-like').textContent = '';
   const suggestion = suggestClub(dist);
   document.getElementById('hud-club-suggestion').textContent = suggestion ? `Suggested: ${suggestion}` : '';
+  updatePlaysLikeAndSuggestion(dist, teePoint, hole.green);
 }
 
 function renderPlayHUD(){

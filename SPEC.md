@@ -78,7 +78,6 @@ Haversine for distances, standard forward-bearing formula for camera heading,
 from tee/green/dogleg lat-lngs.
 
 ## Parked for v2 (do NOT build yet)
-- Live GPS rangefinder (distance from player's position to green)
 - Handicaps/Stableford
 
 ## Admin publish (direct-to-main course publishing)
@@ -120,6 +119,13 @@ if the device is lost or shared, revoke the token on GitHub immediately.
 6. Paste key into the placeholder constant in `index.html`
    (Also create a **Map ID** in Google Cloud console — required for the vector
    renderer — and put it in the adjacent placeholder constant)
+
+**Maps Elevation API** (for "plays like" uphill/downhill distance) uses the
+same key/referrer restrictions — just add **Maps Elevation API** to the
+key's API restriction list alongside Maps JavaScript API. It's a separate
+billed SKU from Dynamic Maps loads, so it's worth its own budget-alert
+sanity check if hole-view volume grows; results are cached per tee/green
+pair for the session to avoid repeat calls on hole revisits.
 
 ## Working preferences
 - Plan and confirm before implementing changes; ask before creating/overwriting
