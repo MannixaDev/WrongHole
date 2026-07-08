@@ -1052,7 +1052,26 @@ function renderOsmResults(courses){
 /* =========================================================================
    9. PLAY MODE
    ========================================================================= */
-const playState = { course: null, round: null, previewOnly: false, currentHoleIndex: 0, map: null, markers: [] };
+const playState = { course: null, round: null, previewOnly: false, currentHoleIndex: 0, map: null, markers: [], gpsWatchId: null, livePosition: null };
+
+function startGpsWatch(){
+  if(!navigator.geolocation) return;
+  playState.gpsWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      playState.livePosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      updateDistanceReadout();
+    },
+    () => { /* denied/unavailable — silently keep using static distance */ },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+  );
+}
+function stopGpsWatch(){
+  if(playState.gpsWatchId != null && navigator.geolocation){
+    navigator.geolocation.clearWatch(playState.gpsWatchId);
+  }
+  playState.gpsWatchId = null;
+  playState.livePosition = null;
+}
 let scoreEntryTemp = [];
 let statsEntryTemp = [];
 
@@ -1084,6 +1103,7 @@ function startRound(course, playerNames){
   document.getElementById('mini-scorecard').hidden = true;
   updatePlayModeChrome();
   showScreen('play');
+  startGpsWatch();
   initPlayMap().then(() => renderPlayHUD());
 }
 
@@ -1104,14 +1124,26 @@ function updatePlayModeChrome(){
   document.getElementById('hud-scorecard-toggle').hidden = playState.previewOnly;
 }
 
+function updateDistanceReadout(){
+  const hole = playState.course.holes[playState.currentHoleIndex];
+  let dist = null, live = false;
+  if(playState.livePosition && hole.green){
+    dist = haversineMeters(playState.livePosition, hole.green);
+    live = true;
+  } else if(hole.tee && hole.green){
+    dist = haversineMeters(hole.tee, hole.green);
+  }
+  document.getElementById('hud-distance').textContent =
+    dist == null ? 'Distance unknown' : `${formatDistance(dist, getSettings().units)}${live ? ' (live)' : ''}`;
+  const suggestion = suggestClub(dist);
+  document.getElementById('hud-club-suggestion').textContent = suggestion ? `Suggested: ${suggestion}` : '';
+}
+
 function renderPlayHUD(){
   const hole = playState.course.holes[playState.currentHoleIndex];
   document.getElementById('hud-hole-num').textContent = hole.number;
   document.getElementById('hud-par').textContent = `Par ${hole.par}`;
-  const dist = (hole.tee && hole.green) ? haversineMeters(hole.tee, hole.green) : null;
-  document.getElementById('hud-distance').textContent = dist == null ? 'Distance unknown' : formatDistance(dist, getSettings().units);
-  const suggestion = suggestClub(dist);
-  document.getElementById('hud-club-suggestion').textContent = suggestion ? `Suggested: ${suggestion}` : '';
+  updateDistanceReadout();
   if(playState.previewOnly){
     document.getElementById('preview-prev-btn').disabled = playState.currentHoleIndex === 0;
     document.getElementById('preview-next-btn').disabled = playState.currentHoleIndex === playState.course.holes.length - 1;
@@ -1258,6 +1290,7 @@ function confirmScoreEntry(){
   if(holeIndex < playState.course.holes.length - 1){
     jumpToHole(holeIndex + 1, true);
   } else {
+    stopGpsWatch();
     saveRound(playState.round);
     openSummary(playState.round, { readOnly: false });
   }
@@ -1558,7 +1591,10 @@ function wireGlobalEvents(){
     if(!panel.hidden) renderMiniScorecard();
   });
   document.getElementById('hud-exit').addEventListener('click', () => {
-    if(playState.previewOnly || confirm('Exit this round? Unsaved progress will be lost.')){ showScreen('home'); renderHome(); }
+    if(playState.previewOnly || confirm('Exit this round? Unsaved progress will be lost.')){
+      stopGpsWatch();
+      showScreen('home'); renderHome();
+    }
   });
   document.getElementById('preview-prev-btn').addEventListener('click', () => {
     if(playState.currentHoleIndex > 0) jumpToHole(playState.currentHoleIndex - 1, true);
