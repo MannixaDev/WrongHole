@@ -687,7 +687,7 @@ async function openCameraPreview(hole){
   const camera = computeCameraForHole(hole);
   if(!camera){ wrap.innerHTML = '<p style="padding:16px;">Set the tee and green first.</p>'; return; }
   const mapDiv = document.createElement('div'); mapDiv.className = 'map-el'; wrap.appendChild(mapDiv);
-  const map = await createMap(mapDiv, { ...camera, gestureHandling: 'none' });
+  const map = await createMap(mapDiv, camera);
   const colors = { tee: '#1e5631', green: '#c0392b', dogleg: '#caa23a' };
   for(const type of ['tee','green','dogleg']){
     if(hole[type]) await createMarker(map, hole[type], colors[type]);
@@ -860,7 +860,7 @@ async function initPlayMap(){
   const mapDiv = document.createElement('div'); mapDiv.className = 'map-el'; wrap.appendChild(mapDiv);
   const hole = playState.course.holes[0];
   const camera = computeCameraForHole(hole) || { center: { lat: 51.0, lng: -1.3 }, zoom: 17, heading: 0, tilt: 0 };
-  playState.map = await createMap(mapDiv, { ...camera, gestureHandling: 'none' });
+  playState.map = await createMap(mapDiv, camera);
 }
 
 function startRound(course, playerNames){
