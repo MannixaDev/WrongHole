@@ -1,0 +1,31 @@
+[
+  {
+    "id": "demo-course",
+    "name": "Demo Course (fictional — for testing)",
+    "source": "library",
+    "note": "Made-up coordinates for exercising Play Mode, scoring, and sharing. Not a real golf course — do not navigate to it.",
+    "holes": [
+      {
+        "number": 1,
+        "par": 4,
+        "tee": { "lat": 51.000000, "lng": -1.300000 },
+        "green": { "lat": 51.003117, "lng": -1.300000 },
+        "dogleg": null
+      },
+      {
+        "number": 2,
+        "par": 3,
+        "tee": { "lat": 51.003300, "lng": -1.299700 },
+        "green": { "lat": 51.003300, "lng": -1.297559 },
+        "dogleg": null
+      },
+      {
+        "number": 3,
+        "par": 5,
+        "tee": { "lat": 51.003500, "lng": -1.297300 },
+        "green": { "lat": 51.000475, "lng": -1.293012 },
+        "dogleg": { "lat": 51.001643, "lng": -1.296226 }
+      }
+    ]
+  }
+]

@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>WrongHole — Golf Round Tracker</title>
+<style>
+  :root{
+    --green-primary:#1e5631;
+    --green-dark:#123d21;
+    --green-light:#2f7a45;
+    --cream:#f7f3e8;
+    --cream-dark:#ece4cf;
+    --flag-red:#c0392b;
+    --amber:#caa23a;
+    --ink:#1b1b1b;
+    --white:#ffffff;
+    --radius:12px;
+    --shadow:0 2px 8px rgba(0,0,0,.18);
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--cream);
+    color:var(--ink);
+  }
+  h1,h2,h3,h4{margin:0 0 .4em;}
+  button{font:inherit;cursor:pointer;}
+  input,select,textarea{font:inherit;}
+  .screen{min-height:100vh;}
+  [hidden]{display:none !important;}
+
+  /* ---- shared chrome ---- */
+  .header-bar{
+    background:var(--green-primary);color:var(--white);
+    padding:14px 16px;display:flex;align-items:center;justify-content:space-between;
+    position:sticky;top:0;z-index:5;
+  }
+  .header-bar h1{font-size:1.2rem;}
+  .units-toggle{background:var(--green-dark);border:none;color:var(--white);border-radius:20px;padding:6px 12px;font-size:.85rem;}
+  .btn{border:none;border-radius:var(--radius);padding:12px 18px;font-size:1rem;font-weight:600;min-height:44px;}
+  .btn-primary{background:var(--green-primary);color:var(--white);}
+  .btn-primary:active{background:var(--green-dark);}
+  .btn-danger{background:var(--flag-red);color:var(--white);}
+  .btn-ghost{background:transparent;color:var(--green-primary);border:1px solid var(--green-primary);}
+  .btn-block{width:100%;}
+  .btn-big{padding:18px;font-size:1.15rem;border-radius:16px;}
+  .empty-hint{color:#6b6b5f;font-style:italic;padding:8px 0;}
+
+  /* ---- home ---- */
+  .home-content{padding:16px;max-width:900px;margin:0 auto;}
+  .home-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;}
+  .home-actions .btn{flex:1 1 160px;}
+  section.block{margin-bottom:28px;}
+  .course-card,.round-card{
+    background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);
+    padding:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
+  }
+  .course-card-info h3{font-size:1rem;}
+  .course-card-info p{margin:4px 0 0;font-size:.85rem;color:#555;}
+  .course-card-actions{display:flex;gap:8px;}
+  .badge{display:inline-block;font-size:.7rem;text-transform:uppercase;letter-spacing:.03em;padding:2px 8px;border-radius:10px;color:#fff;}
+  .badge-library{background:var(--green-primary);}
+  .badge-local{background:var(--amber);color:#3a2e00;}
+  .badge-imported{background:#6a7fdb;}
+  .round-card{cursor:pointer;flex-direction:column;align-items:flex-start;}
+
+  /* ---- editor / osm-import layout ---- */
+  .subscreen-bar{
+    background:var(--green-primary);color:#fff;padding:10px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:5;
+  }
+  .subscreen-bar input[type="text"]{border:none;border-radius:8px;padding:8px 10px;flex:1;min-width:120px;}
+  .editor-layout{display:flex;flex-direction:column;}
+  @media(min-width:860px){ .editor-layout{flex-direction:row;height:calc(100vh - 53px);} }
+  .map-wrap{position:relative;flex:1;min-height:340px;background:#0d2818;}
+  @media(min-width:860px){ .map-wrap{min-height:0;} }
+  .map-el{position:absolute;inset:0;}
+  .maps-banner{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;
+    padding:24px;color:#fff;background:#0d2818;font-size:.95rem;
+  }
+  .pin-type-row{display:flex;gap:8px;padding:10px;background:var(--cream-dark);flex-wrap:wrap;}
+  .pin-type-row button{flex:1;min-width:90px;background:#fff;border:2px solid transparent;border-radius:8px;padding:10px;font-weight:600;}
+  .pin-type-row button[data-pin-type="tee"].active{border-color:var(--green-primary);color:var(--green-primary);}
+  .pin-type-row button[data-pin-type="green"].active{border-color:var(--flag-red);color:var(--flag-red);}
+  .pin-type-row button[data-pin-type="dogleg"].active{border-color:var(--amber);color:#7a5f00;}
+  .sidebar{width:100%;background:var(--cream);padding:10px;overflow-y:auto;}
+  @media(min-width:860px){ .sidebar{width:320px;} }
+  .hole-row{
+    display:flex;align-items:center;gap:8px;background:#fff;border-radius:8px;padding:8px 10px;margin-bottom:6px;
+    border:2px solid transparent;
+  }
+  .hole-row.active{border-color:var(--green-primary);}
+  .hole-row .hole-num{font-weight:700;width:26px;}
+  .hole-row input[type="number"]{width:52px;padding:4px;border:1px solid #ccc;border-radius:6px;}
+  .dot-row{display:flex;gap:3px;}
+  .dot{width:9px;height:9px;border-radius:50%;background:#ccc;}
+  .dot.set-tee{background:var(--green-primary);}
+  .dot.set-green{background:var(--flag-red);}
+  .dot.set-dogleg{background:var(--amber);}
+  .hole-row .spacer{flex:1;}
+  .hole-row .icon-btn{background:none;border:none;font-size:1rem;padding:4px 6px;}
+  .editor-footer,.osm-footer{display:flex;gap:8px;padding:10px;flex-wrap:wrap;}
+  .editor-footer .btn,.osm-footer .btn{flex:1;}
+  .manual-coords{padding:10px;background:#fff;}
+  .manual-coords .row{display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap;}
+  .manual-coords input[type="number"]{width:110px;padding:6px;border:1px solid #ccc;border-radius:6px;}
+  .manual-coords label{width:70px;font-size:.85rem;font-weight:600;}
+
+  /* ---- OSM import ---- */
+  .osm-results{padding:10px;}
+  .osm-search-row{display:flex;gap:8px;padding:10px;background:var(--cream-dark);flex-wrap:wrap;}
+  .osm-search-row input{flex:1;min-width:150px;padding:8px;border-radius:8px;border:1px solid #ccc;}
+
+  /* ---- play mode ---- */
+  #screen-play{position:fixed;inset:0;background:#0d2818;z-index:20;}
+  #play-map-wrap{position:absolute;inset:0;}
+  .play-hud{position:absolute;top:0;left:0;right:0;padding:14px;display:flex;justify-content:space-between;align-items:flex-start;
+    background:linear-gradient(rgba(0,0,0,.55),transparent);color:#fff;pointer-events:none;}
+  .play-hud *{pointer-events:auto;}
+  .hud-hole-info{display:flex;gap:14px;align-items:baseline;}
+  .hud-hole-info .hole-num{font-size:2rem;font-weight:800;}
+  .hud-hole-info .hole-meta{font-size:.95rem;opacity:.9;}
+  .hud-top-actions{display:flex;gap:8px;}
+  .hud-icon-btn{background:rgba(0,0,0,.35);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:10px;padding:8px 12px;}
+  .play-bottom-bar{position:absolute;left:0;right:0;bottom:0;padding:18px;background:linear-gradient(transparent,rgba(0,0,0,.6));}
+  .mini-scorecard{
+    position:absolute;left:0;right:0;bottom:0;background:var(--cream);border-radius:16px 16px 0 0;
+    max-height:60vh;overflow-y:auto;padding:14px;box-shadow:0 -4px 16px rgba(0,0,0,.3);
+  }
+  .mini-scorecard table{width:100%;border-collapse:collapse;font-size:.85rem;}
+  .mini-scorecard th,.mini-scorecard td{padding:4px 6px;text-align:center;border-bottom:1px solid #ddd;}
+
+  /* ---- modals ---- */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;z-index:50;}
+  @media(min-width:640px){ .modal{align-items:center;} }
+  .modal-content{background:var(--cream);width:100%;max-width:480px;border-radius:20px 20px 0 0;padding:20px;max-height:88vh;overflow-y:auto;}
+  @media(min-width:640px){ .modal-content{border-radius:16px;} }
+  .modal-actions{display:flex;gap:10px;margin-top:16px;}
+  .modal-actions .btn{flex:1;}
+  .player-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+  .player-row input{flex:1;padding:10px;border-radius:8px;border:1px solid #ccc;}
+  .btn-remove-player{background:none;border:none;color:var(--flag-red);font-size:1.1rem;}
+  .score-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #ddd;}
+  .score-row-name{flex:1;font-weight:600;}
+  .stepper{display:flex;align-items:center;gap:10px;}
+  .stepper-btn{width:38px;height:38px;border-radius:50%;border:1px solid var(--green-primary);background:#fff;color:var(--green-primary);font-size:1.2rem;font-weight:700;}
+  .stepper-value{min-width:24px;text-align:center;font-size:1.1rem;font-weight:700;}
+  .btn-skip{font-size:.8rem;padding:6px 10px;min-height:auto;}
+  textarea#export-json-output{width:100%;height:200px;font-family:monospace;font-size:.8rem;border-radius:8px;border:1px solid #ccc;padding:8px;}
+
+  /* ---- summary ---- */
+  .summary-content{padding:16px;max-width:900px;margin:0 auto;}
+  .readonly-banner{background:var(--amber);color:#3a2e00;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-weight:600;}
+  table.scorecard{width:100%;border-collapse:collapse;background:#fff;border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);margin-bottom:16px;font-size:.85rem;}
+  table.scorecard th,table.scorecard td{padding:8px 6px;text-align:center;border-bottom:1px solid #eee;}
+  table.scorecard th{background:var(--green-primary);color:#fff;position:sticky;top:0;}
+  table.scorecard td.hole-label{text-align:left;font-weight:600;}
+  tr.subtotal-row td{background:var(--cream-dark);font-weight:700;}
+  .score-eagle{background:#fce9c9;color:#7a5f00;font-weight:700;}
+  .score-birdie{background:#e6f3e0;color:var(--green-dark);font-weight:700;}
+  .score-par{color:#333;}
+  .score-bogey{background:#fdecea;color:#8a3b32;}
+  .score-double{background:#f6c9c2;color:var(--flag-red);font-weight:700;}
+  .score-skip{color:#aaa;font-style:italic;}
+  .share-result{margin-top:10px;}
+  .share-result input{width:100%;padding:8px;border-radius:8px;border:1px solid #ccc;font-size:.8rem;}
+  .summary-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+  .summary-actions .btn{flex:1;min-width:120px;}
+
+  /* ---- toast ---- */
+  #toast{
+    position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:#fff;padding:10px 18px;border-radius:20px;opacity:0;
+    transition:opacity .2s,transform .2s;pointer-events:none;z-index:100;font-size:.9rem;
+  }
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  @media print{
+    .no-print{display:none !important;}
+    body{background:#fff;}
+    table.scorecard{box-shadow:none;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================= HOME ============================= -->
+<section class="screen" data-screen="home">
+  <header class="header-bar">
+    <h1>⛳ WrongHole</h1>
+    <button class="units-toggle" id="units-toggle">Yards</button>
+  </header>
+  <div class="home-content">
+    <div class="home-actions">
+      <button class="btn btn-primary" id="btn-find-nearby">Find nearby courses</button>
+      <button class="btn btn-ghost" id="btn-map-new-course">Map a new course</button>
+    </div>
+    <section class="block">
+      <h2>Your Courses</h2>
+      <div id="home-course-list"></div>
+    </section>
+    <section class="block">
+      <h2>Recent Rounds</h2>
+      <div id="home-rounds-list"></div>
+    </section>
+  </div>
+</section>
+
+<!-- ============================= COURSE EDITOR ============================= -->
+<section class="screen" data-screen="editor" hidden>
+  <div class="subscreen-bar">
+    <button class="hud-icon-btn" id="editor-back">← Back</button>
+    <input type="text" id="editor-course-name" placeholder="Course name">
+  </div>
+  <div class="editor-layout">
+    <div style="flex:1;display:flex;flex-direction:column;">
+      <div class="pin-type-row">
+        <button data-pin-type="tee" class="active">⛳ Tee</button>
+        <button data-pin-type="green">🚩 Green</button>
+        <button data-pin-type="dogleg">📍 Dogleg</button>
+      </div>
+      <div class="map-wrap" id="editor-map-wrap"></div>
+      <div class="editor-footer">
+        <button class="btn btn-ghost" id="editor-holes-9">Set up 9 holes</button>
+        <button class="btn btn-ghost" id="editor-holes-18">Set up 18 holes</button>
+        <button class="btn btn-primary" id="editor-save">Save</button>
+        <button class="btn btn-ghost" id="editor-export">Export JSON</button>
+      </div>
+    </div>
+    <div class="sidebar">
+      <h3>Holes</h3>
+      <div id="editor-hole-list"></div>
+      <button class="btn btn-ghost btn-block" id="editor-add-hole">+ Add hole</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= OSM IMPORT ============================= -->
+<section class="screen" data-screen="osm-import" hidden>
+  <div class="subscreen-bar">
+    <button class="hud-icon-btn" id="osm-back">← Back</button>
+    <span>Find nearby courses</span>
+  </div>
+  <div class="osm-search-row">
+    <input type="text" id="osm-search-input" placeholder="Search a place or course name">
+    <button class="btn btn-ghost" id="osm-search-btn">Search</button>
+    <button class="btn btn-ghost" id="osm-locate-btn">Use my location</button>
+  </div>
+  <div class="map-wrap" id="osm-map-wrap" style="min-height:280px;"></div>
+  <div class="osm-footer">
+    <button class="btn btn-primary btn-block" id="osm-search-area-btn">Search this area for golf features</button>
+  </div>
+  <div class="osm-results" id="osm-results"></div>
+</section>
+
+<!-- ============================= PLAY MODE ============================= -->
+<section class="screen" data-screen="play" hidden id="screen-play">
+  <div id="play-map-wrap"></div>
+  <div class="play-hud">
+    <div class="hud-hole-info">
+      <div class="hole-num" id="hud-hole-num">1</div>
+      <div class="hole-meta">
+        <div id="hud-par">Par 4</div>
+        <div id="hud-distance">— </div>
+      </div>
+    </div>
+    <div class="hud-top-actions">
+      <button class="hud-icon-btn" id="hud-scorecard-toggle">📋 Card</button>
+      <button class="hud-icon-btn" id="hud-exit">✕ Exit</button>
+    </div>
+  </div>
+  <div class="play-bottom-bar">
+    <button class="btn btn-primary btn-block btn-big" id="hole-complete-btn">Hole Complete</button>
+  </div>
+  <div class="mini-scorecard" id="mini-scorecard" hidden></div>
+</section>
+
+<!-- ============================= ROUND SUMMARY ============================= -->
+<section class="screen" data-screen="summary" hidden>
+  <header class="header-bar">
+    <h1 id="summary-title">Round Summary</h1>
+    <button class="units-toggle no-print" id="summary-back-home">Home</button>
+  </header>
+  <div class="summary-content">
+    <div class="readonly-banner no-print" id="summary-readonly-banner" hidden>Viewing a shared scorecard — not saved to your device.</div>
+    <div class="summary-actions no-print">
+      <button class="btn btn-primary" id="summary-share-btn">Share</button>
+      <button class="btn btn-ghost" id="summary-print-btn">Print / Image view</button>
+    </div>
+    <div class="share-result no-print" id="summary-share-result" hidden>
+      <input type="text" id="summary-share-output" readonly>
+    </div>
+    <div id="summary-table-wrap"></div>
+  </div>
+</section>
+
+<!-- ============================= MODALS ============================= -->
+<div class="modal" id="modal-player-setup" hidden>
+  <div class="modal-content">
+    <h2>Who's playing?</h2>
+    <div id="player-setup-rows"></div>
+    <button class="btn btn-ghost btn-block" id="player-setup-add">+ Add player</button>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="player-setup-cancel">Cancel</button>
+      <button class="btn btn-primary" id="player-setup-start">Start Round</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modal-score-entry" hidden>
+  <div class="modal-content">
+    <h2 id="score-entry-title">Hole 1 · Par 4</h2>
+    <div id="score-entry-rows"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="score-entry-cancel">Cancel</button>
+      <button class="btn btn-primary" id="score-entry-next-btn">Next Hole</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modal-camera-preview" hidden>
+  <div class="modal-content">
+    <h2>Camera Preview</h2>
+    <div class="map-wrap" id="camera-preview-map-wrap" style="height:280px;position:relative;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary btn-block" id="camera-preview-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modal-export-json" hidden>
+  <div class="modal-content">
+    <h2>Export JSON</h2>
+    <p>Paste this into <code>courses.json</code> to add it to the shared library.</p>
+    <textarea id="export-json-output" readonly></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="export-json-copy">Copy</button>
+      <button class="btn btn-primary" id="export-json-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* =========================================================================
+   1. CONFIG
+   Paste your own Google Maps API key and vector Map ID here.
+   See SPEC.md "Google Maps API key — setup" for step-by-step instructions.
+   ========================================================================= */
+const GOOGLE_MAPS_API_KEY = "PASTE_YOUR_GOOGLE_MAPS_API_KEY_HERE";
+const GOOGLE_MAPS_MAP_ID  = "PASTE_YOUR_VECTOR_MAP_ID_HERE";
+const MAPS_CONFIGURED = !GOOGLE_MAPS_API_KEY.startsWith("PASTE_") && !GOOGLE_MAPS_MAP_ID.startsWith("PASTE_");
+
+/* =========================================================================
+   2. GOOGLE MAPS LOADER (official dynamic-import bootstrap)
+   ========================================================================= */
+let mapsLoaderStarted = false;
+function ensureMapsLoader(){
+  if(mapsLoaderStarted || !MAPS_CONFIGURED) return;
+  mapsLoaderStarted = true;
+  (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({
+    key: GOOGLE_MAPS_API_KEY,
+    v: "weekly",
+  });
+}
+
+async function createMap(container, {center, zoom=18, heading=0, tilt=0, gestureHandling='greedy'}={}){
+  ensureMapsLoader();
+  const {Map} = await google.maps.importLibrary('maps');
+  return new Map(container, {
+    center, zoom, heading, tilt, gestureHandling,
+    mapId: GOOGLE_MAPS_MAP_ID,
+    mapTypeId: 'satellite',
+    disableDefaultUI: true,
+    clickableIcons: false,
+  });
+}
+
+async function createMarker(map, position, color){
+  const {AdvancedMarkerElement, PinElement} = await google.maps.importLibrary('marker');
+  const pin = new PinElement({ background: color, borderColor: 'rgba(0,0,0,.35)', glyphColor: '#ffffff', scale: 0.9 });
+  return new AdvancedMarkerElement({ map, position, content: pin.element });
+}
+
+function mapsBanner(container){
+  container.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'maps-banner';
+  div.textContent = 'Google Maps API key not configured — add your key & Map ID at the top of index.html to enable satellite maps (see SPEC.md).';
+  container.appendChild(div);
+}
+
+/* =========================================================================
+   3. GEO MATHS — haversine distance & forward bearing
+   ========================================================================= */
+const EARTH_RADIUS_M = 6371000;
+const toRad = d => d * Math.PI / 180;
+const toDeg = r => r * 180 / Math.PI;
+
+function haversineMeters(a, b){
+  const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat), lat2 = toRad(b.lat);
+  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h));
+}
+function bearingDegrees(a, b){
+  const lat1 = toRad(a.lat), lat2 = toRad(b.lat), dLng = toRad(b.lng - a.lng);
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+function metersToYards(m){ return m * 1.09361; }
+function formatDistance(m, units){
+  if(m == null) return '—';
+  return units === 'metres' ? `${Math.round(m)} m` : `${Math.round(metersToYards(m))} yd`;
+}
+function computeCameraForHole(hole){
+  const aimPoint = hole.dogleg || hole.green;
+  if(!hole.tee || !aimPoint) return null;
+  return { center: hole.tee, heading: bearingDegrees(hole.tee, aimPoint), tilt: 65, zoom: 18.5 };
+}
+
+/* =========================================================================
+   4. STORAGE — localStorage + courses.json
+   ========================================================================= */
+const LS_KEYS = { localCourses: 'golf.courses.local', rounds: 'golf.rounds', settings: 'golf.settings' };
+function readJSON(key, fallback){ try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }catch{ return fallback; } }
+function writeJSON(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+
+function getSettings(){ return Object.assign({ units: 'yards' }, readJSON(LS_KEYS.settings, {})); }
+function saveSettings(s){ writeJSON(LS_KEYS.settings, s); }
+
+function getLocalCourses(){ return readJSON(LS_KEYS.localCourses, []); }
+function saveLocalCourses(list){ writeJSON(LS_KEYS.localCourses, list); }
+function upsertLocalCourse(course){
+  const list = getLocalCourses();
+  const i = list.findIndex(c => c.id === course.id);
+  if(i >= 0) list[i] = course; else list.push(course);
+  saveLocalCourses(list);
+}
+
+function getRounds(){ return readJSON(LS_KEYS.rounds, []); }
+function saveRound(round){ const list = getRounds(); list.unshift(round); writeJSON(LS_KEYS.rounds, list.slice(0, 50)); }
+
+let libraryCoursesCache = null;
+async function loadCourseLibrary(){
+  if(!libraryCoursesCache){
+    try{
+      const res = await fetch('courses.json', { cache: 'no-store' });
+      libraryCoursesCache = res.ok ? await res.json() : [];
+    }catch{ libraryCoursesCache = []; }
+  }
+  const local = getLocalCourses();
+  const localIds = new Set(local.map(c => c.id));
+  return [...libraryCoursesCache.filter(c => !localIds.has(c.id)), ...local];
+}
+function generateId(prefix){ return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`; }
+function escapeHtml(str){ const d = document.createElement('div'); d.textContent = str ?? ''; return d.innerHTML; }
+
+/* =========================================================================
+   5. SCREEN MANAGER
+   ========================================================================= */
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s => { s.hidden = s.dataset.screen !== name; });
+  window.scrollTo(0,0);
+}
+function openModal(id){ document.getElementById(id).hidden = false; }
+function closeModal(id){ document.getElementById(id).hidden = true; }
+
+let toastTimer;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> el.classList.remove('show'), 2000);
+}
+
+/* =========================================================================
+   6. HOME SCREEN
+   ========================================================================= */
+let courseById = new Map();
+
+async function renderHome(){
+  const courses = await loadCourseLibrary();
+  courseById = new Map(courses.map(c => [c.id, c]));
+  const list = document.getElementById('home-course-list');
+  list.innerHTML = '';
+  if(courses.length === 0){
+    list.innerHTML = '<p class="empty-hint">No courses yet — map one or find nearby courses.</p>';
+  }
+  courses.forEach(course => {
+    const card = document.createElement('div');
+    card.className = 'course-card';
+    card.innerHTML = `
+      <div class="course-card-info">
+        <h3>${escapeHtml(course.name)}</h3>
+        <span class="badge badge-${course.source}">${course.source}</span>
+        <p>${course.holes.length} holes</p>
+      </div>
+      <div class="course-card-actions">
+        <button class="btn btn-primary" data-play>Play</button>
+        <button class="btn btn-ghost" data-edit>Edit</button>
+      </div>`;
+    card.querySelector('[data-play]').addEventListener('click', () => openPlayerSetup(course));
+    card.querySelector('[data-edit]').addEventListener('click', () => openEditor(course));
+    list.appendChild(card);
+  });
+  renderRecentRounds();
+}
+
+function renderRecentRounds(){
+  const rounds = getRounds();
+  const el = document.getElementById('home-rounds-list');
+  el.innerHTML = rounds.length ? '' : '<p class="empty-hint">No rounds played yet.</p>';
+  rounds.forEach(r => {
+    const div = document.createElement('div');
+    div.className = 'round-card';
+    const totals = r.players.map((p,pi) => totalStrokes(r, pi));
+    div.innerHTML = `<h4>${escapeHtml(r.courseName)}</h4>
+      <p>${new Date(r.date).toLocaleDateString()} · ${r.players.map((p,pi)=>`${escapeHtml(p.name)}: ${totals[pi]}`).join(' · ')}</p>`;
+    div.addEventListener('click', () => openSummary(r, { readOnly: false }));
+    el.appendChild(div);
+  });
+}
+
+/* =========================================================================
+   7. COURSE EDITOR
+   ========================================================================= */
+const editorState = { course: null, activePinType: 'tee', activeHoleIndex: 0, map: null, markers: [] };
+
+function emptyHole(number){ return { number, par: 4, tee: null, green: null, dogleg: null }; }
+function newEmptyCourse(){ return { id: generateId('local'), name: 'New Course', source: 'local', holes: [ emptyHole(1) ] }; }
+
+function openEditor(course){
+  editorState.course = course ? JSON.parse(JSON.stringify(course)) : newEmptyCourse();
+  editorState.course.source = editorState.course.source === 'library' ? 'local' : editorState.course.source;
+  editorState.activeHoleIndex = 0;
+  editorState.activePinType = 'tee';
+  document.getElementById('editor-course-name').value = editorState.course.name;
+  renderPinTypeButtons();
+  renderHoleSidebar();
+  showScreen('editor');
+  initEditorMap();
+}
+
+function renderPinTypeButtons(){
+  document.querySelectorAll('.pin-type-row button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.pinType === editorState.activePinType);
+  });
+}
+
+function renderHoleSidebar(){
+  const wrap = document.getElementById('editor-hole-list');
+  wrap.innerHTML = '';
+  editorState.course.holes.forEach((hole, i) => {
+    const row = document.createElement('div');
+    row.className = 'hole-row' + (i === editorState.activeHoleIndex ? ' active' : '');
+    row.innerHTML = `
+      <span class="hole-num">${hole.number}</span>
+      <label style="font-size:.75rem;">Par <input type="number" min="3" max="6" value="${hole.par}"></label>
+      <div class="dot-row">
+        <span class="dot ${hole.tee ? 'set-tee' : ''}"></span>
+        <span class="dot ${hole.green ? 'set-green' : ''}"></span>
+        <span class="dot ${hole.dogleg ? 'set-dogleg' : ''}"></span>
+      </div>
+      <span class="spacer"></span>
+      <button class="icon-btn" data-camera title="Camera preview">🎥</button>
+      <button class="icon-btn" data-delete title="Delete hole">🗑</button>`;
+    row.addEventListener('click', (e) => {
+      if(e.target.closest('button') || e.target.tagName === 'INPUT') return;
+      editorState.activeHoleIndex = i;
+      renderHoleSidebar();
+      recenterEditorMapOnActiveHole();
+    });
+    row.querySelector('input[type="number"]').addEventListener('input', e => { hole.par = parseInt(e.target.value,10) || 4; });
+    row.querySelector('[data-camera]').addEventListener('click', () => openCameraPreview(hole));
+    row.querySelector('[data-delete]').addEventListener('click', () => {
+      editorState.course.holes.splice(i, 1);
+      editorState.course.holes.forEach((h, hi) => h.number = hi + 1);
+      editorState.activeHoleIndex = Math.min(editorState.activeHoleIndex, editorState.course.holes.length - 1);
+      renderHoleSidebar();
+      updateEditorMarkers();
+    });
+    wrap.appendChild(row);
+  });
+  renderManualCoordFields();
+}
+
+function renderManualCoordFields(){
+  const existing = document.getElementById('manual-coords-panel');
+  if(existing) existing.remove();
+  if(MAPS_CONFIGURED) return;
+  const hole = editorState.course.holes[editorState.activeHoleIndex];
+  const panel = document.createElement('div');
+  panel.id = 'manual-coords-panel';
+  panel.className = 'manual-coords';
+  ['tee','green','dogleg'].forEach(type => {
+    const pt = hole[type];
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `
+      <label>${type[0].toUpperCase()+type.slice(1)}</label>
+      <input type="number" step="0.000001" placeholder="lat" value="${pt ? pt.lat : ''}">
+      <input type="number" step="0.000001" placeholder="lng" value="${pt ? pt.lng : ''}">
+      <button class="btn btn-ghost" style="padding:6px 10px;min-height:auto;">Set</button>`;
+    const [latInput, lngInput] = row.querySelectorAll('input');
+    row.querySelector('button').addEventListener('click', () => {
+      const lat = parseFloat(latInput.value), lng = parseFloat(lngInput.value);
+      if(Number.isFinite(lat) && Number.isFinite(lng)){
+        hole[type] = { lat, lng };
+        renderHoleSidebar();
+        toast(`${type} set for hole ${hole.number}`);
+      }
+    });
+    panel.appendChild(row);
+  });
+  document.getElementById('editor-map-wrap').after(panel);
+}
+
+async function initEditorMap(){
+  const wrap = document.getElementById('editor-map-wrap');
+  wrap.innerHTML = '';
+  if(!MAPS_CONFIGURED){ mapsBanner(wrap); return; }
+  const mapDiv = document.createElement('div'); mapDiv.className = 'map-el'; wrap.appendChild(mapDiv);
+  const hole = editorState.course.holes[editorState.activeHoleIndex];
+  const center = hole.tee || hole.green || { lat: 51.0, lng: -1.3 };
+  editorState.map = await createMap(mapDiv, { center, zoom: 18 });
+  editorState.map.addListener('click', e => {
+    const hole = editorState.course.holes[editorState.activeHoleIndex];
+    hole[editorState.activePinType] = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+    renderHoleSidebar();
+    updateEditorMarkers();
+  });
+  updateEditorMarkers();
+}
+
+function recenterEditorMapOnActiveHole(){
+  if(!MAPS_CONFIGURED || !editorState.map) return;
+  const hole = editorState.course.holes[editorState.activeHoleIndex];
+  const center = hole.tee || hole.green;
+  if(center) editorState.map.moveCamera({ center, zoom: 18, heading: 0, tilt: 0 });
+  updateEditorMarkers();
+}
+
+async function updateEditorMarkers(){
+  if(!MAPS_CONFIGURED || !editorState.map) return;
+  editorState.markers.forEach(m => m.map = null);
+  editorState.markers = [];
+  const hole = editorState.course.holes[editorState.activeHoleIndex];
+  const colors = { tee: '#1e5631', green: '#c0392b', dogleg: '#caa23a' };
+  for(const type of ['tee','green','dogleg']){
+    if(hole[type]){
+      editorState.markers.push(await createMarker(editorState.map, hole[type], colors[type]));
+    }
+  }
+}
+
+async function openCameraPreview(hole){
+  openModal('modal-camera-preview');
+  const wrap = document.getElementById('camera-preview-map-wrap');
+  wrap.innerHTML = '';
+  if(!MAPS_CONFIGURED){ mapsBanner(wrap); return; }
+  const camera = computeCameraForHole(hole);
+  if(!camera){ wrap.innerHTML = '<p style="padding:16px;">Set the tee and green first.</p>'; return; }
+  const mapDiv = document.createElement('div'); mapDiv.className = 'map-el'; wrap.appendChild(mapDiv);
+  const map = await createMap(mapDiv, { ...camera, gestureHandling: 'none' });
+  const colors = { tee: '#1e5631', green: '#c0392b', dogleg: '#caa23a' };
+  for(const type of ['tee','green','dogleg']){
+    if(hole[type]) await createMarker(map, hole[type], colors[type]);
+  }
+}
+
+/* =========================================================================
+   8. OSM COURSE IMPORT
+   ========================================================================= */
+const osmState = { map: null, center: null };
+
+async function initOsmMap(){
+  const wrap = document.getElementById('osm-map-wrap');
+  wrap.innerHTML = '';
+  if(!MAPS_CONFIGURED){ mapsBanner(wrap); return; }
+  const mapDiv = document.createElement('div'); mapDiv.className = 'map-el'; wrap.appendChild(mapDiv);
+  osmState.map = await createMap(mapDiv, { center: osmState.center || { lat: 51.0, lng: -1.3 }, zoom: 15, tilt: 0 });
+}
+
+function openOsmImport(){
+  document.getElementById('osm-results').innerHTML = '';
+  showScreen('osm-import');
+  initOsmMap();
+}
+
+async function osmGeolocate(){
+  if(!navigator.geolocation){ toast('Geolocation not available'); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    osmState.center = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    if(osmState.map) osmState.map.moveCamera({ center: osmState.center, zoom: 16 });
+  }, () => toast('Could not get your location'));
+}
+
+async function osmSearchPlace(query){
+  if(!query) return;
+  try{
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`);
+    const results = await res.json();
+    if(!results.length){ toast('No results found'); return; }
+    osmState.center = { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) };
+    if(osmState.map) osmState.map.moveCamera({ center: osmState.center, zoom: 16 });
+  }catch{ toast('Search failed'); }
+}
+
+function elementPoint(el){
+  if(el.type === 'node') return { lat: el.lat, lng: el.lon };
+  if(el.geometry && el.geometry.length){
+    const n = el.geometry.length;
+    return {
+      lat: el.geometry.reduce((s,p)=>s+p.lat,0)/n,
+      lng: el.geometry.reduce((s,p)=>s+p.lon,0)/n,
+    };
+  }
+  return null;
+}
+function elementEndpoints(el){
+  if(!el.geometry || el.geometry.length < 2) return null;
+  const first = el.geometry[0], last = el.geometry[el.geometry.length-1];
+  return { start: { lat: first.lat, lng: first.lon }, end: { lat: last.lat, lng: last.lon } };
+}
+function nearestWithin(pt, features, maxMeters){
+  let best = null, bestD = Infinity;
+  for(const f of features){ const d = haversineMeters(pt, f.point); if(d < bestD){ bestD = d; best = f; } }
+  return (best && bestD <= maxMeters) ? best : null;
+}
+
+function convertOsmToCourses(elements){
+  const nameEl = elements.find(e => e.tags && e.tags.leisure === 'golf_course' && e.tags.name);
+  const courseName = nameEl ? nameEl.tags.name : 'Imported Course (verify pins)';
+
+  const teeFeatures = elements.filter(e => e.tags && e.tags.golf === 'tee').map(e => ({ point: elementPoint(e), tags: e.tags })).filter(f => f.point);
+  const greenFeatures = elements.filter(e => e.tags && e.tags.golf === 'green').map(e => ({ point: elementPoint(e), tags: e.tags })).filter(f => f.point);
+  const holeWays = elements.filter(e => e.tags && e.tags.golf === 'hole' && e.type === 'way');
+
+  let holes = [];
+  if(holeWays.length){
+    holes = holeWays.map(way => {
+      const ends = elementEndpoints(way);
+      if(!ends) return null;
+      const teeMatch = nearestWithin(ends.start, teeFeatures, 100);
+      const greenMatch = nearestWithin(ends.end, greenFeatures, 100);
+      const number = way.tags.ref ? parseInt(way.tags.ref, 10) : null;
+      const par = way.tags.par ? parseInt(way.tags.par, 10) : null;
+      return {
+        number: Number.isFinite(number) ? number : null,
+        par: Number.isFinite(par) ? par : null,
+        tee: teeMatch ? teeMatch.point : ends.start,
+        green: greenMatch ? greenMatch.point : ends.end,
+        dogleg: null,
+      };
+    }).filter(Boolean);
+  } else {
+    const usedGreens = new Set();
+    holes = teeFeatures.map(tf => {
+      let best = null, bestD = Infinity, bestIdx = -1;
+      greenFeatures.forEach((gf, gi) => {
+        if(usedGreens.has(gi)) return;
+        const d = haversineMeters(tf.point, gf.point);
+        if(d < bestD){ bestD = d; best = gf; bestIdx = gi; }
+      });
+      if(best) usedGreens.add(bestIdx);
+      const refNum = tf.tags.ref ? parseInt(tf.tags.ref, 10) : null;
+      return { number: Number.isFinite(refNum) ? refNum : null, par: null, tee: tf.point, green: best ? best.point : null, dogleg: null };
+    }).filter(h => h.green);
+  }
+
+  if(!holes.length) return [];
+  holes.forEach((h, i) => { if(h.number == null) h.number = i + 1; });
+  holes.sort((a,b) => a.number - b.number);
+  holes.forEach((h, i) => { h.number = i + 1; if(h.par == null) h.par = 4; });
+
+  return [{ id: generateId('osm'), name: courseName, source: 'imported', holes }];
+}
+
+function setOsmLoading(loading){
+  const btn = document.getElementById('osm-search-area-btn');
+  btn.disabled = loading;
+  btn.textContent = loading ? 'Searching…' : 'Search this area for golf features';
+}
+
+async function osmSearchArea(){
+  const center = osmState.center || (osmState.map && { lat: osmState.map.getCenter().lat(), lng: osmState.map.getCenter().lng() });
+  if(!center){ toast('Search a place or use your location first'); return; }
+  const d = 0.01;
+  const bbox = `${center.lat-d},${center.lng-d},${center.lat+d},${center.lng+d}`;
+  const query = `[out:json][timeout:25];(way["leisure"="golf_course"](${bbox});way["golf"="hole"](${bbox});way["golf"="tee"](${bbox});node["golf"="tee"](${bbox});way["golf"="green"](${bbox});node["golf"="green"](${bbox}););out geom;`;
+  setOsmLoading(true);
+  try{
+    const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query });
+    if(!res.ok) throw new Error('bad response');
+    const data = await res.json();
+    renderOsmResults(convertOsmToCourses(data.elements || []));
+  }catch{
+    toast('Overpass query failed — try again');
+  }
+  setOsmLoading(false);
+}
+
+function renderOsmResults(courses){
+  const el = document.getElementById('osm-results');
+  el.innerHTML = '';
+  if(!courses.length){
+    el.innerHTML = '<p class="empty-hint">No golf features found in this area. Try a different location, or map the course manually.</p>';
+    return;
+  }
+  courses.forEach(c => {
+    const div = document.createElement('div');
+    div.className = 'course-card';
+    div.innerHTML = `
+      <div class="course-card-info">
+        <h3>${escapeHtml(c.name)}</h3>
+        <p>${c.holes.length} holes found — verify pins &amp; pars before playing</p>
+      </div>
+      <div class="course-card-actions"><button class="btn btn-primary" data-import>Import &amp; Edit</button></div>`;
+    div.querySelector('[data-import]').addEventListener('click', () => { upsertLocalCourse(c); openEditor(c); });
+    el.appendChild(div);
+  });
+}
+
+/* =========================================================================
+   9. PLAY MODE
+   ========================================================================= */
+const playState = { course: null, round: null, currentHoleIndex: 0, map: null, markers: [] };
+let scoreEntryTemp = [];
+
+async function initPlayMap(){
+  const wrap = document.getElementById('play-map-wrap');
+  wrap.innerHTML = '';
+  if(!MAPS_CONFIGURED){ mapsBanner(wrap); return; }
+  const mapDiv = document.createElement('div'); mapDiv.className = 'map-el'; wrap.appendChild(mapDiv);
+  const hole = playState.course.holes[0];
+  const camera = computeCameraForHole(hole) || { center: { lat: 51.0, lng: -1.3 }, zoom: 17, heading: 0, tilt: 0 };
+  playState.map = await createMap(mapDiv, { ...camera, gestureHandling: 'none' });
+}
+
+function startRound(course, playerNames){
+  playState.course = course;
+  playState.round = {
+    id: generateId('round'),
+    courseId: course.id,
+    courseName: course.name,
+    date: new Date().toISOString(),
+    players: playerNames.map(name => ({ name })),
+    holes: course.holes.map(h => ({ number: h.number, par: h.par })),
+    scores: course.holes.map(() => playerNames.map(() => null)),
+  };
+  playState.currentHoleIndex = 0;
+  document.getElementById('mini-scorecard').hidden = true;
+  showScreen('play');
+  initPlayMap().then(() => renderPlayHUD());
+}
+
+function renderPlayHUD(){
+  const hole = playState.course.holes[playState.currentHoleIndex];
+  document.getElementById('hud-hole-num').textContent = hole.number;
+  document.getElementById('hud-par').textContent = `Par ${hole.par}`;
+  const dist = (hole.tee && hole.green) ? haversineMeters(hole.tee, hole.green) : null;
+  document.getElementById('hud-distance').textContent = dist == null ? 'Distance unknown' : formatDistance(dist, getSettings().units);
+  document.getElementById('hole-complete-btn').textContent =
+    playState.currentHoleIndex === playState.course.holes.length - 1 ? 'Finish Round' : 'Hole Complete';
+  updatePlayMarkers(hole);
+}
+
+async function updatePlayMarkers(hole){
+  if(!MAPS_CONFIGURED || !playState.map) return;
+  playState.markers.forEach(m => m.map = null);
+  playState.markers = [];
+  const colors = { tee: '#1e5631', green: '#c0392b', dogleg: '#caa23a' };
+  for(const type of ['tee','green','dogleg']){
+    if(hole[type]) playState.markers.push(await createMarker(playState.map, hole[type], colors[type]));
+  }
+}
+
+function animateCameraTo(map, target, duration = 1500){
+  const startCenter = { lat: map.getCenter().lat(), lng: map.getCenter().lng() };
+  const startHeading = map.getHeading() || 0, startTilt = map.getTilt() || 0, startZoom = map.getZoom();
+  let dh = ((target.heading - startHeading + 540) % 360) - 180;
+  const t0 = performance.now();
+  function step(now){
+    const t = Math.min(1, (now - t0) / duration);
+    const e = t < 0.5 ? 2*t*t : -1 + (4 - 2*t)*t;
+    map.moveCamera({
+      center: { lat: startCenter.lat + (target.center.lat - startCenter.lat)*e, lng: startCenter.lng + (target.center.lng - startCenter.lng)*e },
+      heading: startHeading + dh*e,
+      tilt: startTilt + (target.tilt - startTilt)*e,
+      zoom: startZoom + (target.zoom - startZoom)*e,
+    });
+    if(t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function jumpToHole(index, animate){
+  playState.currentHoleIndex = index;
+  const hole = playState.course.holes[index];
+  if(MAPS_CONFIGURED && playState.map){
+    const camera = computeCameraForHole(hole);
+    if(camera){ animate ? animateCameraTo(playState.map, camera) : playState.map.moveCamera(camera); }
+  }
+  renderPlayHUD();
+  renderMiniScorecard();
+}
+
+function openScoreEntry(){
+  const holeIndex = playState.currentHoleIndex;
+  const hole = playState.course.holes[holeIndex];
+  const scores = playState.round.scores[holeIndex];
+  scoreEntryTemp = playState.round.players.map((_, pi) => scores[pi] ?? hole.par);
+
+  const rows = document.getElementById('score-entry-rows');
+  rows.innerHTML = '';
+  playState.round.players.forEach((p, pi) => {
+    const row = document.createElement('div');
+    row.className = 'score-row';
+    row.innerHTML = `
+      <span class="score-row-name">${escapeHtml(p.name)}</span>
+      <div class="stepper">
+        <button class="stepper-btn" data-delta="-1">−</button>
+        <span class="stepper-value">${scoreEntryTemp[pi]}</span>
+        <button class="stepper-btn" data-delta="1">+</button>
+      </div>
+      <button class="btn btn-ghost btn-skip" data-skip>Skip</button>`;
+    const valueEl = row.querySelector('.stepper-value');
+    row.querySelector('[data-delta="-1"]').addEventListener('click', () => {
+      scoreEntryTemp[pi] = Math.max(1, (scoreEntryTemp[pi] ?? hole.par) - 1);
+      valueEl.textContent = scoreEntryTemp[pi];
+    });
+    row.querySelector('[data-delta="1"]').addEventListener('click', () => {
+      scoreEntryTemp[pi] = (scoreEntryTemp[pi] ?? hole.par) + 1;
+      valueEl.textContent = scoreEntryTemp[pi];
+    });
+    row.querySelector('[data-skip]').addEventListener('click', () => {
+      scoreEntryTemp[pi] = null;
+      valueEl.textContent = '–';
+    });
+    rows.appendChild(row);
+  });
+  document.getElementById('score-entry-title').textContent = `Hole ${hole.number} · Par ${hole.par}`;
+  document.getElementById('score-entry-next-btn').textContent =
+    holeIndex === playState.course.holes.length - 1 ? 'Finish Round' : 'Next Hole';
+  openModal('modal-score-entry');
+}
+
+function confirmScoreEntry(){
+  const holeIndex = playState.currentHoleIndex;
+  playState.round.scores[holeIndex] = scoreEntryTemp.slice();
+  closeModal('modal-score-entry');
+  if(holeIndex < playState.course.holes.length - 1){
+    jumpToHole(holeIndex + 1, true);
+  } else {
+    saveRound(playState.round);
+    openSummary(playState.round, { readOnly: false });
+  }
+}
+
+function renderMiniScorecard(){
+  const panel = document.getElementById('mini-scorecard');
+  if(panel.hidden) return;
+  const round = playState.round;
+  let html = '<table><thead><tr><th>Hole</th>' + round.players.map(p=>`<th>${escapeHtml(p.name)}</th>`).join('') + '</tr></thead><tbody>';
+  round.holes.forEach((h, hi) => {
+    html += `<tr><td>${h.number} (par ${h.par})</td>` + round.players.map((p,pi) => `<td>${round.scores[hi][pi] ?? '–'}</td>`).join('') + '</tr>';
+  });
+  html += '</tbody></table>';
+  panel.innerHTML = html;
+}
+
+/* =========================================================================
+   10. ROUND SUMMARY & SHARING
+   ========================================================================= */
+let currentSummaryRound = null;
+let currentSummaryReadOnly = false;
+
+function totalStrokes(round, playerIndex){
+  return round.scores.reduce((sum, holeScores) => sum + (holeScores[playerIndex] ?? 0), 0);
+}
+function parTotal(round, uptoIndex){
+  return round.holes.slice(0, uptoIndex).reduce((s,h) => s + h.par, 0);
+}
+function scoreClass(strokes, par){
+  if(strokes == null) return 'score-skip';
+  const diff = strokes - par;
+  if(diff <= -2) return 'score-eagle';
+  if(diff === -1) return 'score-birdie';
+  if(diff === 0) return 'score-par';
+  if(diff === 1) return 'score-bogey';
+  return 'score-double';
+}
+
+function openSummary(round, { readOnly = false } = {}){
+  currentSummaryRound = round;
+  currentSummaryReadOnly = readOnly;
+  document.getElementById('summary-title').textContent = round.courseName;
+  document.getElementById('summary-readonly-banner').hidden = !readOnly;
+  document.getElementById('summary-share-result').hidden = true;
+  renderSummaryTable();
+  showScreen('summary');
+}
+
+function renderSummaryTable(){
+  const round = currentSummaryRound;
+  const n = round.holes.length;
+  const frontCount = Math.min(9, n);
+  const wrap = document.getElementById('summary-table-wrap');
+
+  function buildRows(startIdx, endIdx){
+    let rows = '';
+    for(let hi = startIdx; hi < endIdx; hi++){
+      const h = round.holes[hi];
+      rows += `<tr><td class="hole-label">${h.number}<br><small>Par ${h.par}</small></td>`;
+      round.players.forEach((p, pi) => {
+        const s = round.scores[hi][pi];
+        rows += `<td class="${scoreClass(s, h.par)}">${s ?? '–'}</td>`;
+      });
+      rows += '</tr>';
+    }
+    return rows;
+  }
+  function subtotalRow(startIdx, endIdx, label){
+    let cells = `<td class="hole-label">${label}</td>`;
+    round.players.forEach((p, pi) => {
+      let sum = 0;
+      for(let hi = startIdx; hi < endIdx; hi++){ sum += round.scores[hi][pi] ?? 0; }
+      cells += `<td>${sum}</td>`;
+    });
+    return `<tr class="subtotal-row">${cells}</tr>`;
+  }
+
+  const header = `<tr><th>Hole</th>${round.players.map(p=>`<th>${escapeHtml(p.name)}</th>`).join('')}</tr>`;
+  let html = `<table class="scorecard"><thead>${header}</thead><tbody>`;
+  html += buildRows(0, frontCount);
+  html += subtotalRow(0, frontCount, 'Out');
+  if(n > 9){
+    html += buildRows(9, n);
+    html += subtotalRow(9, n, 'In');
+  }
+  html += subtotalRow(0, n, 'Total');
+  let parRow = `<tr><td class="hole-label">Vs Par</td>`;
+  round.players.forEach((p, pi) => {
+    const total = totalStrokes(round, pi);
+    const playedPar = round.holes.reduce((s,h,hi) => s + (round.scores[hi][pi] != null ? h.par : 0), 0);
+    const diff = total - playedPar;
+    parRow += `<td>${diff > 0 ? '+' + diff : diff}</td>`;
+  });
+  parRow += '</tr>';
+  html += parRow;
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function base64UrlEncode(bytes){
+  let bin = '';
+  bytes.forEach(b => bin += String.fromCharCode(b));
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function base64UrlDecode(str){
+  str = str.replace(/-/g,'+').replace(/_/g,'/');
+  while(str.length % 4) str += '=';
+  const bin = atob(str);
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+async function buildShareUrl(round){
+  const json = JSON.stringify(round);
+  const stream = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
+  const buf = await new Response(stream).arrayBuffer();
+  const b64 = base64UrlEncode(new Uint8Array(buf));
+  const url = new URL(location.href);
+  url.hash = 'r=' + b64;
+  return url.toString();
+}
+async function decodeShareHash(hash){
+  const m = /r=([^&]+)/.exec(hash);
+  if(!m) return null;
+  const bytes = base64UrlDecode(decodeURIComponent(m[1]));
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  const buf = await new Response(stream).arrayBuffer();
+  return JSON.parse(new TextDecoder().decode(buf));
+}
+
+/* =========================================================================
+   11. PLAYER SETUP
+   ========================================================================= */
+let pendingCourseForRound = null;
+
+function renumberPlayerPlaceholders(){
+  document.querySelectorAll('#player-setup-rows .player-row input').forEach((input, i) => {
+    input.placeholder = `Player ${i+1} name`;
+  });
+}
+function addPlayerRow(defaultName = ''){
+  const wrap = document.getElementById('player-setup-rows');
+  if(wrap.children.length >= 4) return;
+  const row = document.createElement('div');
+  row.className = 'player-row';
+  const idx = wrap.children.length + 1;
+  row.innerHTML = `<input type="text" placeholder="Player ${idx} name" value="${escapeHtml(defaultName)}">
+    <button class="btn-remove-player" type="button">✕</button>`;
+  row.querySelector('.btn-remove-player').addEventListener('click', () => { row.remove(); renumberPlayerPlaceholders(); });
+  wrap.appendChild(row);
+}
+function openPlayerSetup(course){
+  pendingCourseForRound = course;
+  document.getElementById('player-setup-rows').innerHTML = '';
+  addPlayerRow(); addPlayerRow();
+  openModal('modal-player-setup');
+}
+
+/* =========================================================================
+   INIT & EVENT WIRING
+   ========================================================================= */
+function wireGlobalEvents(){
+  // home
+  document.getElementById('btn-find-nearby').addEventListener('click', openOsmImport);
+  document.getElementById('btn-map-new-course').addEventListener('click', () => openEditor(null));
+  document.getElementById('units-toggle').addEventListener('click', () => {
+    const s = getSettings();
+    s.units = s.units === 'yards' ? 'metres' : 'yards';
+    saveSettings(s);
+    document.getElementById('units-toggle').textContent = s.units === 'yards' ? 'Yards' : 'Metres';
+    if(!document.getElementById('screen-play').hidden) renderPlayHUD();
+  });
+  document.getElementById('units-toggle').textContent = getSettings().units === 'yards' ? 'Yards' : 'Metres';
+
+  // editor
+  document.getElementById('editor-back').addEventListener('click', () => { showScreen('home'); renderHome(); });
+  document.getElementById('editor-course-name').addEventListener('input', e => { editorState.course.name = e.target.value; });
+  document.querySelectorAll('.pin-type-row button').forEach(btn => {
+    btn.addEventListener('click', () => { editorState.activePinType = btn.dataset.pinType; renderPinTypeButtons(); });
+  });
+  document.getElementById('editor-add-hole').addEventListener('click', () => {
+    editorState.course.holes.push(emptyHole(editorState.course.holes.length + 1));
+    editorState.activeHoleIndex = editorState.course.holes.length - 1;
+    renderHoleSidebar();
+    recenterEditorMapOnActiveHole();
+  });
+  function setHoleCount(n){
+    const holes = editorState.course.holes;
+    while(holes.length < n) holes.push(emptyHole(holes.length + 1));
+    if(holes.length > n && confirm(`Trim hole list down to ${n} holes? Extra holes will be removed.`)) holes.length = n;
+    editorState.activeHoleIndex = Math.min(editorState.activeHoleIndex, holes.length - 1);
+    renderHoleSidebar();
+  }
+  document.getElementById('editor-holes-9').addEventListener('click', () => setHoleCount(9));
+  document.getElementById('editor-holes-18').addEventListener('click', () => setHoleCount(18));
+  document.getElementById('editor-save').addEventListener('click', () => {
+    editorState.course.source = editorState.course.source === 'library' ? 'local' : editorState.course.source;
+    upsertLocalCourse(editorState.course);
+    toast('Course saved');
+  });
+  document.getElementById('editor-export').addEventListener('click', () => {
+    document.getElementById('export-json-output').value = JSON.stringify(editorState.course, null, 2);
+    openModal('modal-export-json');
+  });
+  document.getElementById('export-json-close').addEventListener('click', () => closeModal('modal-export-json'));
+  document.getElementById('export-json-copy').addEventListener('click', async () => {
+    try{ await navigator.clipboard.writeText(document.getElementById('export-json-output').value); toast('Copied'); }
+    catch{ toast('Copy failed — select the text manually'); }
+  });
+  document.getElementById('camera-preview-close').addEventListener('click', () => closeModal('modal-camera-preview'));
+
+  // osm import
+  document.getElementById('osm-back').addEventListener('click', () => { showScreen('home'); renderHome(); });
+  document.getElementById('osm-search-btn').addEventListener('click', () => osmSearchPlace(document.getElementById('osm-search-input').value.trim()));
+  document.getElementById('osm-search-input').addEventListener('keydown', e => { if(e.key === 'Enter') osmSearchPlace(e.target.value.trim()); });
+  document.getElementById('osm-locate-btn').addEventListener('click', osmGeolocate);
+  document.getElementById('osm-search-area-btn').addEventListener('click', osmSearchArea);
+
+  // play mode
+  document.getElementById('hole-complete-btn').addEventListener('click', openScoreEntry);
+  document.getElementById('score-entry-cancel').addEventListener('click', () => closeModal('modal-score-entry'));
+  document.getElementById('score-entry-next-btn').addEventListener('click', confirmScoreEntry);
+  document.getElementById('hud-scorecard-toggle').addEventListener('click', () => {
+    const panel = document.getElementById('mini-scorecard');
+    panel.hidden = !panel.hidden;
+    if(!panel.hidden) renderMiniScorecard();
+  });
+  document.getElementById('hud-exit').addEventListener('click', () => {
+    if(confirm('Exit this round? Unsaved progress will be lost.')){ showScreen('home'); renderHome(); }
+  });
+
+  // player setup
+  document.getElementById('player-setup-add').addEventListener('click', () => addPlayerRow());
+  document.getElementById('player-setup-cancel').addEventListener('click', () => closeModal('modal-player-setup'));
+  document.getElementById('player-setup-start').addEventListener('click', () => {
+    const names = [...document.querySelectorAll('#player-setup-rows input')].map((el,i) => el.value.trim() || `Player ${i+1}`);
+    if(!names.length){ toast('Add at least one player'); return; }
+    closeModal('modal-player-setup');
+    startRound(pendingCourseForRound, names);
+  });
+
+  // summary
+  document.getElementById('summary-back-home').addEventListener('click', () => {
+    history.replaceState(null, '', location.pathname + location.search);
+    showScreen('home'); renderHome();
+  });
+  document.getElementById('summary-share-btn').addEventListener('click', async () => {
+    try{
+      const url = await buildShareUrl(currentSummaryRound);
+      document.getElementById('summary-share-output').value = url;
+      document.getElementById('summary-share-result').hidden = false;
+      await navigator.clipboard.writeText(url).catch(()=>{});
+      toast('Share link copied');
+    }catch{ toast('Could not build share link'); }
+  });
+  document.getElementById('summary-print-btn').addEventListener('click', () => window.print());
+}
+
+async function init(){
+  wireGlobalEvents();
+  if(location.hash.startsWith('#r=')){
+    try{
+      const shared = await decodeShareHash(location.hash.slice(1));
+      if(shared){ openSummary(shared, { readOnly: true }); return; }
+    }catch{ /* fall through to home */ }
+  }
+  showScreen('home');
+  await renderHome();
+}
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
