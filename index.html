@@ -1265,12 +1265,18 @@ async function updatePlaysLikeAndSuggestion(dist, teePoint, greenPoint){
 function updateDistanceReadout(){
   const hole = playState.course.holes[playState.currentHoleIndex];
   const teePoint = getSelectedTeePoint(hole, playState.selectedTeeName);
-  let dist = null, live = false;
+  const staticDist = (teePoint && hole.green) ? haversineMeters(teePoint, hole.green) : null;
+  let dist = staticDist, live = false;
   if(playState.livePosition && hole.green){
-    dist = haversineMeters(playState.livePosition, hole.green);
-    live = true;
-  } else if(teePoint && hole.green){
-    dist = haversineMeters(teePoint, hole.green);
+    const liveDist = haversineMeters(playState.livePosition, hole.green);
+    // Sanity check: if the live GPS fix is far further from the green than this hole is even
+    // long, we're not actually on/near this hole (e.g. testing away from the course) — ignore
+    // it rather than show (and "plays like"-adjust) a nonsensical distance.
+    const plausibleMax = (staticDist ?? 550) + 300;
+    if(liveDist <= plausibleMax){
+      dist = liveDist;
+      live = true;
+    }
   }
   document.getElementById('hud-distance').textContent =
     dist == null ? 'Distance unknown' : `${formatDistance(dist, getSettings().units)}${live ? ' (live)' : ''}`;
