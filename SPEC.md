@@ -39,6 +39,9 @@ tones, flag-red accents. Clean and modern.
 - "Camera preview" button per hole — shows exactly what Play Mode will look like
 - Save to localStorage + **Export JSON** button (for pasting into `courses.json`)
 - Imported OSM courses can be opened in the editor to correct pins
+- **Publish to Library** button (admin-only, see below) — commits the course
+  directly into the shared `courses.json` on `main` via GitHub's Contents API,
+  so it's live for all visitors without a manual PR
 
 ### 3. OSM Course Import
 - Query the Overpass API for golf features near the user's location or a
@@ -76,8 +79,32 @@ from tee/green/dogleg lat-lngs.
 
 ## Parked for v2 (do NOT build yet)
 - Live GPS rangefinder (distance from player's position to green)
-- Course sharing beyond Export JSON
 - Handicaps/Stableford
+
+## Admin publish (direct-to-main course publishing)
+Since the site is static (no backend), "publish for all users" works by
+calling GitHub's Contents API directly from the browser with a GitHub
+Personal Access Token, gated behind a hidden admin control — not a real
+auth system, since there's no server to enforce one. The token itself
+*is* the access control: anyone holding it can publish on your behalf, so
+treat it like a password.
+
+**One-time setup:**
+1. GitHub → Settings → Developer settings → Personal access tokens →
+   Fine-grained tokens → Generate new token
+2. Resource owner: your account. Repository access: **only this repo**
+   (`WrongHole`)
+3. Permissions → Repository permissions → **Contents: Read and write**
+   (leave everything else as No access)
+4. Set an expiration (GitHub caps fine-grained tokens at 1 year; you'll
+   need to regenerate and re-paste when it expires)
+5. Copy the token, open the site, click the ⚙ icon next to the units
+   toggle on Home, paste it into "Admin — Publish Settings", Save
+
+Once saved, the Course Editor shows a **Publish to Library** button that
+reads the current `courses.json`, upserts the course by `id`, and commits
+straight to `main`. The token stays in that browser's localStorage only —
+if the device is lost or shared, revoke the token on GitHub immediately.
 
 ## Google Maps API key — setup (user to do once)
 1. console.cloud.google.com → create project (e.g. "golf-tracker")

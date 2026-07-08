@@ -145,6 +145,7 @@
   .modal-actions .btn{flex:1;}
   .player-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
   .player-row input{flex:1;padding:10px;border-radius:8px;border:1px solid #ccc;}
+  #admin-token-input{width:100%;padding:10px;border-radius:8px;border:1px solid #ccc;font-family:monospace;font-size:.85rem;}
   .btn-remove-player{background:none;border:none;color:var(--flag-red);font-size:1.1rem;}
   .score-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #ddd;}
   .score-row-name{flex:1;font-weight:600;}
@@ -194,7 +195,10 @@
 <section class="screen" data-screen="home">
   <header class="header-bar">
     <h1>⛳ WrongHole</h1>
-    <button class="units-toggle" id="units-toggle">Yards</button>
+    <div style="display:flex;gap:8px;">
+      <button class="units-toggle" id="admin-settings-btn" title="Admin">⚙</button>
+      <button class="units-toggle" id="units-toggle">Yards</button>
+    </div>
   </header>
   <div class="home-content">
     <div class="home-search-row">
@@ -235,6 +239,7 @@
         <button class="btn btn-ghost" id="editor-holes-18">Set up 18 holes</button>
         <button class="btn btn-primary" id="editor-save">Save</button>
         <button class="btn btn-ghost" id="editor-export">Export JSON</button>
+        <button class="btn btn-danger" id="editor-publish" hidden>Publish to Library</button>
       </div>
     </div>
     <div class="sidebar">
@@ -350,6 +355,18 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" id="export-json-copy">Copy</button>
       <button class="btn btn-primary" id="export-json-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modal-admin-settings" hidden>
+  <div class="modal-content">
+    <h2>Admin — Publish Settings</h2>
+    <p>Paste a GitHub Personal Access Token (fine-grained, scoped to just this repo's Contents: Read &amp; Write) to enable "Publish to Library" from the Course Editor, which commits directly to <code>main</code>. The token only ever leaves this browser to talk to GitHub's API, and is stored in this browser's local storage. Anyone with this token can publish on your behalf — don't share it, and revoke it in GitHub if this device is shared or lost.</p>
+    <input type="password" id="admin-token-input" placeholder="github_pat_...">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="admin-token-clear">Clear token</button>
+      <button class="btn btn-primary" id="admin-token-save">Save</button>
     </div>
   </div>
 </div>
@@ -475,6 +492,51 @@ async function loadCourseLibrary(){
 function generateId(prefix){ return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`; }
 function escapeHtml(str){ const d = document.createElement('div'); d.textContent = str ?? ''; return d.innerHTML; }
 
+/* ---- Admin publish (direct-to-main via GitHub Contents API) ---- */
+const GITHUB_REPO_OWNER = 'MannixaDev';
+const GITHUB_REPO_NAME = 'WrongHole';
+const GITHUB_COURSES_PATH = 'courses.json';
+const GITHUB_BRANCH = 'main';
+const LS_ADMIN_TOKEN = 'golf.admin.githubToken';
+
+function getAdminToken(){ return localStorage.getItem(LS_ADMIN_TOKEN) || ''; }
+function setAdminToken(token){ token ? localStorage.setItem(LS_ADMIN_TOKEN, token) : localStorage.removeItem(LS_ADMIN_TOKEN); }
+function isAdmin(){ return !!getAdminToken(); }
+
+function utf8ToBase64(str){ return btoa(unescape(encodeURIComponent(str))); }
+function base64ToUtf8(str){ return decodeURIComponent(escape(atob(str.replace(/\n/g, '')))); }
+
+async function publishCourseToLibrary(course){
+  const token = getAdminToken();
+  if(!token){ toast('Enter your admin token first'); return false; }
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/contents/${GITHUB_COURSES_PATH}`;
+  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' };
+  try{
+    const getRes = await fetch(`${apiUrl}?ref=${GITHUB_BRANCH}`, { headers });
+    if(!getRes.ok) throw new Error(`Could not read courses.json (${getRes.status})`);
+    const file = await getRes.json();
+    const currentCourses = JSON.parse(base64ToUtf8(file.content));
+    const publishedCourse = { ...course, source: 'library' };
+    const i = currentCourses.findIndex(c => c.id === publishedCourse.id);
+    if(i >= 0) currentCourses[i] = publishedCourse; else currentCourses.push(publishedCourse);
+    const putRes = await fetch(apiUrl, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        message: `Publish course: ${publishedCourse.name}`,
+        content: utf8ToBase64(JSON.stringify(currentCourses, null, 2) + '\n'),
+        sha: file.sha,
+        branch: GITHUB_BRANCH,
+      }),
+    });
+    if(!putRes.ok){ const err = await putRes.json().catch(()=>({})); throw new Error(err.message || `GitHub API error (${putRes.status})`); }
+    return true;
+  }catch(e){
+    toast('Publish failed: ' + e.message);
+    return false;
+  }
+}
+
 /* =========================================================================
    5. SCREEN MANAGER
    ========================================================================= */
@@ -567,6 +629,7 @@ function openEditor(course){
   editorState.activeHoleIndex = 0;
   editorState.activePinType = 'tee';
   document.getElementById('editor-course-name').value = editorState.course.name;
+  document.getElementById('editor-publish').hidden = !isAdmin();
   renderPinTypeButtons();
   renderHoleSidebar();
   showScreen('editor');
@@ -1231,6 +1294,34 @@ function wireGlobalEvents(){
     catch{ toast('Copy failed — select the text manually'); }
   });
   document.getElementById('camera-preview-close').addEventListener('click', () => closeModal('modal-camera-preview'));
+  document.getElementById('editor-publish').addEventListener('click', async () => {
+    if(!confirm(`Publish "${editorState.course.name}" to the shared library? This commits directly to main and will be visible to all users.`)) return;
+    toast('Publishing…');
+    const ok = await publishCourseToLibrary(editorState.course);
+    if(ok){
+      deleteLocalCourse(editorState.course.id);
+      libraryCoursesCache = null;
+      toast('Published — may take a minute to appear for other visitors');
+      showScreen('home');
+      renderHome();
+    }
+  });
+
+  // admin settings
+  document.getElementById('admin-settings-btn').addEventListener('click', () => {
+    document.getElementById('admin-token-input').value = getAdminToken();
+    openModal('modal-admin-settings');
+  });
+  document.getElementById('admin-token-save').addEventListener('click', () => {
+    setAdminToken(document.getElementById('admin-token-input').value.trim());
+    closeModal('modal-admin-settings');
+    toast(isAdmin() ? 'Admin token saved' : 'Admin token cleared');
+  });
+  document.getElementById('admin-token-clear').addEventListener('click', () => {
+    setAdminToken('');
+    document.getElementById('admin-token-input').value = '';
+    toast('Admin token cleared');
+  });
 
   // osm import
   document.getElementById('osm-back').addEventListener('click', () => { showScreen('home'); renderHome(); });
