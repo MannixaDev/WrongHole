@@ -420,7 +420,7 @@ function formatDistance(m, units){
 function computeCameraForHole(hole){
   const aimPoint = hole.dogleg || hole.green;
   if(!hole.tee || !aimPoint) return null;
-  return { center: hole.tee, heading: bearingDegrees(hole.tee, aimPoint), tilt: 65, zoom: 18.5 };
+  return { center: hole.tee, heading: bearingDegrees(hole.tee, aimPoint), tilt: 45, zoom: 19 };
 }
 
 /* =========================================================================
