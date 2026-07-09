@@ -60,6 +60,8 @@
     padding:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
   }
   .course-card-info h3{font-size:1rem;}
+  .star-btn{background:none;border:none;font-size:1.1rem;color:#bbb;padding:0;vertical-align:middle;cursor:pointer;}
+  .star-btn.active{color:var(--amber);}
   .course-card-info p{margin:4px 0 0;font-size:.85rem;color:#555;}
   .course-card-actions{display:flex;gap:8px;}
   .badge{display:inline-block;font-size:.7rem;text-transform:uppercase;letter-spacing:.03em;padding:2px 8px;border-radius:10px;color:#fff;}
@@ -309,6 +311,7 @@
         <div id="hud-distance">— </div>
         <div id="hud-plays-like"></div>
         <div id="hud-club-suggestion"></div>
+        <div id="hud-weather"></div>
       </div>
     </div>
     <div class="hud-top-actions">
@@ -509,7 +512,7 @@ function computeCameraForHole(hole, teeName){
 /* =========================================================================
    4. STORAGE — localStorage + courses.json
    ========================================================================= */
-const LS_KEYS = { localCourses: 'golf.courses.local', rounds: 'golf.rounds', settings: 'golf.settings', clubs: 'golf.clubs' };
+const LS_KEYS = { localCourses: 'golf.courses.local', rounds: 'golf.rounds', settings: 'golf.settings', clubs: 'golf.clubs', favorites: 'golf.favorites' };
 function readJSON(key, fallback){ try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }catch{ return fallback; } }
 function writeJSON(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
 
@@ -544,6 +547,23 @@ function deleteLocalCourse(id){
 
 function getRounds(){ return readJSON(LS_KEYS.rounds, []); }
 function saveRound(round){ const list = getRounds(); list.unshift(round); writeJSON(LS_KEYS.rounds, list.slice(0, 50)); }
+function getBestRoundForCourse(courseId){
+  let best = null;
+  getRounds().filter(r => r.courseId === courseId).forEach(r => {
+    r.players.forEach((p, pi) => {
+      const total = totalStrokes(r, pi);
+      if(total > 0 && (best === null || total < best.total)) best = { total, playerName: p.name };
+    });
+  });
+  return best;
+}
+
+function getFavorites(){ return new Set(readJSON(LS_KEYS.favorites, [])); }
+function toggleFavorite(id){
+  const favs = getFavorites();
+  favs.has(id) ? favs.delete(id) : favs.add(id);
+  writeJSON(LS_KEYS.favorites, [...favs]);
+}
 
 let libraryCoursesCache = null;
 async function loadCourseLibrary(){
@@ -694,6 +714,8 @@ let courseById = new Map();
 async function renderHome(){
   const courses = await loadCourseLibrary();
   courseById = new Map(courses.map(c => [c.id, c]));
+  const favs = getFavorites();
+  courses.sort((a, b) => (favs.has(b.id) ? 1 : 0) - (favs.has(a.id) ? 1 : 0));
   const list = document.getElementById('home-course-list');
   list.innerHTML = '';
   if(courses.length === 0){
@@ -702,11 +724,12 @@ async function renderHome(){
   courses.forEach(course => {
     const card = document.createElement('div');
     card.className = 'course-card';
+    const best = getBestRoundForCourse(course.id);
     card.innerHTML = `
       <div class="course-card-info">
-        <h3>${escapeHtml(course.name)}</h3>
+        <h3><button class="star-btn${favs.has(course.id) ? ' active' : ''}" data-favorite title="Favorite">${favs.has(course.id) ? '★' : '☆'}</button> ${escapeHtml(course.name)}</h3>
         <span class="badge badge-${course.source}">${course.source}</span>
-        <p>${course.holes.length} holes</p>
+        <p>${course.holes.length} holes${best ? ` · Best: ${best.total} (${escapeHtml(best.playerName)})` : ''}</p>
       </div>
       <div class="course-card-actions">
         <button class="btn btn-primary" data-play>Play</button>
@@ -715,6 +738,7 @@ async function renderHome(){
         ${course.source !== 'library' ? '<button class="btn btn-danger" data-delete>Delete</button>' : ''}
         ${(isAdmin() && course.source === 'library') ? '<button class="btn btn-danger" data-remove-library>Remove from Library</button>' : ''}
       </div>`;
+    card.querySelector('[data-favorite]').addEventListener('click', () => { toggleFavorite(course.id); renderHome(); });
     card.querySelector('[data-play]').addEventListener('click', () => openPlayerSetup(course));
     card.querySelector('[data-preview]').addEventListener('click', () => startPreview(course));
     card.querySelector('[data-edit]').addEventListener('click', () => openEditor(course));
@@ -1221,7 +1245,45 @@ function renderOsmResults(courses){
 /* =========================================================================
    9. PLAY MODE
    ========================================================================= */
-const playState = { course: null, round: null, previewOnly: false, currentHoleIndex: 0, map: null, markers: [], gpsWatchId: null, livePosition: null, selectedTeeName: null, showingIntro: false };
+const playState = { course: null, round: null, previewOnly: false, currentHoleIndex: 0, map: null, markers: [], gpsWatchId: null, livePosition: null, selectedTeeName: null, showingIntro: false, weather: null };
+
+const WEATHER_ICONS = [
+  [[0], '☀️'], [[1,2,3], '⛅'], [[45,48], '🌫️'], [[51,53,55,56,57,61,63,65,66,67], '🌧️'],
+  [[71,73,75,77], '❄️'], [[80,81,82], '🌦️'], [[85,86], '🌨️'], [[95,96,99], '⛈️'],
+];
+function weatherIcon(code){
+  const match = WEATHER_ICONS.find(([codes]) => codes.includes(code));
+  return match ? match[1] : '🌡️';
+}
+function compassLabel(deg){
+  const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+  return dirs[Math.round(((deg % 360) / 45)) % 8];
+}
+async function fetchWeather(point){
+  try{
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${point.lat}&longitude=${point.lng}&current=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code&wind_speed_unit=mph&temperature_unit=celsius`);
+    if(!res.ok) return null;
+    const data = await res.json();
+    return data.current || null;
+  }catch{ return null; }
+}
+async function loadCourseWeather(course){
+  playState.weather = null;
+  const firstHole = course.holes[0];
+  const point = firstHole ? getSelectedTeePoint(firstHole, playState.selectedTeeName) : null;
+  if(!point) return;
+  const w = await fetchWeather(point);
+  if(playState.course !== course) return; // left this course before the fetch resolved
+  playState.weather = w;
+  renderWeatherBadge();
+}
+function renderWeatherBadge(){
+  const el = document.getElementById('hud-weather');
+  if(!el) return;
+  if(!playState.weather){ el.textContent = ''; return; }
+  const w = playState.weather;
+  el.textContent = `${weatherIcon(w.weather_code)} ${Math.round(w.temperature_2m)}°C · ${Math.round(w.wind_speed_10m)}mph ${compassLabel(w.wind_direction_10m)}`;
+}
 
 function startGpsWatch(){
   if(!navigator.geolocation) return;
@@ -1268,6 +1330,7 @@ function showProShopIntro(intro){
   document.getElementById('hud-distance').textContent = formatDistance(intro.distance, getSettings().units);
   document.getElementById('hud-plays-like').textContent = '';
   document.getElementById('hud-club-suggestion').textContent = '';
+  renderWeatherBadge();
   document.getElementById('hud-tee-select').hidden = true;
   document.getElementById('hole-complete-btn').hidden = true;
   document.getElementById('preview-nav-bar').hidden = true;
@@ -1318,6 +1381,7 @@ function startRound(course, playerNames, teeName){
   updatePlayModeChrome();
   showScreen('play');
   startGpsWatch();
+  loadCourseWeather(course);
   initPlayMap().then(() => {
     const intro = computeProShopIntro(playState.course, playState.selectedTeeName);
     if(intro) showProShopIntro(intro); else renderPlayHUD();
@@ -1334,6 +1398,7 @@ function startPreview(course){
   document.getElementById('mini-scorecard').hidden = true;
   updatePlayModeChrome();
   showScreen('play');
+  loadCourseWeather(course);
   initPlayMap().then(() => {
     const intro = computeProShopIntro(playState.course, playState.selectedTeeName);
     if(intro) showProShopIntro(intro); else renderPlayHUD();
@@ -1413,6 +1478,7 @@ function renderPlayHUD(){
   document.getElementById('hud-hole-num').textContent = hole.number;
   document.getElementById('hud-par').textContent = `Par ${hole.par}`;
   updateDistanceReadout();
+  renderWeatherBadge();
   if(playState.previewOnly){
     document.getElementById('preview-prev-btn').disabled = playState.currentHoleIndex === 0;
     document.getElementById('preview-next-btn').disabled = playState.currentHoleIndex === playState.course.holes.length - 1;
