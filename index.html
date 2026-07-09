@@ -51,7 +51,15 @@
     position:sticky;top:0;z-index:5;
   }
   .header-bar h1{font-size:1.2rem;}
-  .units-toggle{background:var(--green-dark);border:none;color:var(--white);border-radius:20px;padding:6px 12px;font-size:.85rem;}
+  .units-toggle{
+    background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.4);color:var(--white);
+    border-radius:20px;padding:7px 13px;font-size:.9rem;font-weight:600;
+  }
+  .units-toggle:active{background:rgba(255,255,255,.3);}
+  @media(min-width:860px){
+    .header-bar{padding:22px 32px;}
+    .units-toggle{padding:9px 16px;font-size:1rem;}
+  }
   .btn{border:none;border-radius:var(--radius);padding:12px 18px;font-size:1rem;font-weight:600;min-height:44px;}
   .btn-primary{background:var(--green-primary);color:var(--white);}
   .btn-primary:active{background:var(--green-dark);}
@@ -230,6 +238,7 @@
 
   /* ---- logo & splash ---- */
   .logo-header{height:32px;width:auto;display:block;}
+  @media(min-width:860px){ .logo-header{height:48px;} }
   #splash-screen{
     position:fixed;inset:0;height:100dvh;z-index:9999;
     background:var(--green-primary);
