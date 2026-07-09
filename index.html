@@ -238,6 +238,12 @@
   }
   #splash-screen.hidden{opacity:0;pointer-events:none;}
   .logo-splash{width:min(70vw,300px);height:auto;}
+  .logo-header{cursor:pointer;}
+  .confetti-piece{position:fixed;top:-10px;width:8px;height:14px;z-index:10000;animation:confetti-fall linear forwards;pointer-events:none;}
+  @keyframes confetti-fall{
+    0%{transform:translateY(0) rotate(0deg);opacity:1;}
+    100%{transform:translateY(110vh) rotate(540deg);opacity:.85;}
+  }
 </style>
 <script>
 (function(){
@@ -266,7 +272,7 @@
 <!-- ============================= HOME ============================= -->
 <section class="screen" data-screen="home">
   <header class="header-bar">
-    <svg class="logo-header" viewBox="0 0 320 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="WrongHole">
+    <svg class="logo-header" id="header-logo" viewBox="0 0 320 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="WrongHole">
       <text x="160" y="46" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="40" letter-spacing="1" fill="#ffffff">WRONG</text>
       <text x="52" y="106" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="52" fill="#ffffff">H</text>
       <text x="268" y="106" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="52" fill="#ffffff">LE</text>
@@ -773,6 +779,68 @@ function toast(msg){
   el.textContent = msg; el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=> el.classList.remove('show'), 2000);
+}
+
+/* ---- easter eggs ---- */
+const BAD_SCORE_JOKES = [
+  'Are we playing rugby? 🏉',
+  'Are you sure you were playing the right hole? 👀',
+  "That's one for the blooper reel 📹",
+];
+function badScoreReaction(strokes, par){
+  if(strokes == null) return null;
+  const overPar = strokes - par;
+  if(overPar < 4) return null;
+  if(strokes === 8) return 'Nice snowman! ⛄';
+  if(strokes >= 9) return BAD_SCORE_JOKES[Math.floor(Math.random() * BAD_SCORE_JOKES.length)];
+  return "Ouch. That one'll sting. 😅";
+}
+
+function fireConfetti(){
+  const colors = ['#1e5631', '#c0392b', '#caa23a', '#ffffff', '#2f7a45'];
+  for(let i = 0; i < 40; i++){
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.left = Math.random() * 100 + 'vw';
+    piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+    piece.style.animationDelay = (Math.random() * 0.4) + 's';
+    piece.style.animationDuration = (1.8 + Math.random() * 1.2) + 's';
+    document.body.appendChild(piece);
+    setTimeout(() => piece.remove(), 3200);
+  }
+}
+
+const SECRET_COURSE_ID = 'secret-easter-egg-course';
+function unlockSecretCourse(){
+  if(getLocalCourses().some(c => c.id === SECRET_COURSE_ID)){
+    toast("You've already found this one! 🥚");
+    return;
+  }
+  upsertLocalCourse({
+    id: SECRET_COURSE_ID,
+    name: '🥚 The Secret Course',
+    source: 'local',
+    holes: [
+      { number: 1, par: 3, tees: [{ name: 'Tee', lat: 51.000000, lng: -1.300000 }], green: { lat: 51.001350, lng: -1.300000 }, dogleg: null },
+      { number: 2, par: 4, tees: [{ name: 'Tee', lat: 51.001500, lng: -1.299700 }], green: { lat: 51.001500, lng: -1.297450 }, dogleg: null },
+      { number: 3, par: 5, tees: [{ name: 'Tee', lat: 51.001700, lng: -1.297200 }], green: { lat: 50.998700, lng: -1.293000 }, dogleg: { lat: 51.000000, lng: -1.296000 } },
+    ],
+    amenities: [],
+  });
+  fireConfetti();
+  toast('🥚 Secret course unlocked! Check Home.');
+  if(!document.querySelector('[data-screen="home"]').hidden) renderHome();
+}
+
+let logoTapCount = 0, logoTapTimer = null;
+function onLogoTap(){
+  logoTapCount++;
+  clearTimeout(logoTapTimer);
+  logoTapTimer = setTimeout(() => { logoTapCount = 0; }, 1200);
+  if(logoTapCount >= 7){
+    logoTapCount = 0;
+    unlockSecretCourse();
+  }
 }
 
 /* =========================================================================
@@ -1694,9 +1762,18 @@ function openScoreEntry(){
 
 function confirmScoreEntry(){
   const holeIndex = playState.currentHoleIndex;
+  const hole = playState.course.holes[holeIndex];
   playState.round.scores[holeIndex] = scoreEntryTemp.slice();
   if(playState.round.statsTracked){
     playState.round.stats[holeIndex] = statsEntryTemp.slice();
+  }
+  if(scoreEntryTemp.some(s => s === 1)){
+    fireConfetti();
+    toast('🎉 ACE! Buy the round!');
+  } else {
+    const worst = scoreEntryTemp.reduce((max, s) => (s != null && (max == null || s > max)) ? s : max, null);
+    const joke = badScoreReaction(worst, hole.par);
+    if(joke) toast(joke);
   }
   closeModal('modal-score-entry');
   if(holeIndex < playState.course.holes.length - 1){
@@ -1917,6 +1994,18 @@ function wireGlobalEvents(){
     if(!document.getElementById('screen-play').hidden) renderPlayHUD();
   });
   document.getElementById('units-toggle').textContent = getSettings().units === 'yards' ? 'Yards' : 'Metres';
+  (function(){
+    const btn = document.getElementById('units-toggle');
+    let holdTimer = null;
+    const reveal = () => { holdTimer = setTimeout(() => { btn.textContent = '🚌 Buses'; }, 500); };
+    const restore = () => { clearTimeout(holdTimer); btn.textContent = getSettings().units === 'yards' ? 'Yards' : 'Metres'; };
+    btn.addEventListener('mousedown', reveal);
+    btn.addEventListener('touchstart', reveal, { passive: true });
+    btn.addEventListener('mouseup', restore);
+    btn.addEventListener('mouseleave', restore);
+    btn.addEventListener('touchend', restore);
+  })();
+  document.getElementById('header-logo').addEventListener('click', onLogoTap);
   document.getElementById('stats-toggle-btn').addEventListener('click', () => {
     const s = getSettings();
     s.trackStats = !s.trackStats;
