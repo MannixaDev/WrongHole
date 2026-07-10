@@ -59,11 +59,24 @@ tones, flag-red accents. Clean and modern.
 - Mini scorecard accessible mid-round
 
 ### 5. Multi-player scoring
-- On round start: add 1–4 players by name
+- On round start: add 1–4 players by name, pick a format
+  (Strokeplay or Stableford)
 - Score entry per hole shows a row per player (defaults to par, +/- taps,
   skippable)
 - Scorecard/summary shows players side by side
-- Stableford/handicaps are OUT of scope for v1
+
+### 5b. Stableford & handicaps
+- Each player enters a **playing handicap** (0–54) at round start;
+  last-used handicap is remembered per player name
+- Strokes received per hole come from the hole's **stroke index** (SI),
+  editable per hole in the Course Editor; holes without an SI fall back to
+  their hole number, so no course needs migrating
+- Points = `max(0, 2 + par + strokes received − gross)`; skipped hole = 0
+- Points are always derived from the stored gross scores + handicaps
+  (never stored), so old rounds and share links need no migration —
+  a round without a `format` field renders as strokeplay
+- Summary shows per-hole points, Out/In/Total points, and the winner;
+  vs-par colouring stays driven by gross score
 
 ### 6. Round Summary & sharing
 - Classic scorecard grid: front 9 / back 9 / totals, vs-par, per-hole colouring
@@ -76,9 +89,6 @@ tones, flag-red accents. Clean and modern.
 ## Distance/bearing maths
 Haversine for distances, standard forward-bearing formula for camera heading,
 from tee/green/dogleg lat-lngs.
-
-## Parked for v2 (do NOT build yet)
-- Handicaps/Stableford
 
 ## Admin publish (direct-to-main course publishing)
 Since the site is static (no backend), "publish for all users" works by

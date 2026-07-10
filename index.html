@@ -449,6 +449,14 @@
 <div class="modal" id="modal-player-setup" hidden>
   <div class="modal-content">
     <h2>Who's playing?</h2>
+    <div style="margin-bottom:12px;">
+      <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Format</label>
+      <div class="toggle-pair" id="format-toggle">
+        <button class="toggle-btn" data-format="strokeplay">Strokeplay</button>
+        <button class="toggle-btn" data-format="stableford">Stableford</button>
+      </div>
+      <p id="format-hint" style="font-size:.75rem;color:var(--text-muted);margin:4px 0 0;" hidden>Points from net score per hole — enter each player's playing handicap.</p>
+    </div>
     <div id="player-setup-tee-row" hidden style="margin-bottom:12px;">
       <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Tees</label>
       <select id="player-setup-tee-select" style="width:100%;padding:10px;border-radius:8px;border:1px solid #ccc;"></select>
@@ -1031,7 +1039,10 @@ const AMENITY_ICONS = { proshop: '🏪', toilet: '🚻', bar: '🍺' };
 const AMENITY_COLORS = { proshop: '#3b6fd9', toilet: '#888888', bar: '#a06cd5' };
 const AMENITY_DEFAULT_NAMES = { proshop: 'Pro Shop', toilet: 'Toilets', bar: 'Bar' };
 
-function emptyHole(number){ return { number, par: 4, tees: [{ name: 'Tee', lat: null, lng: null }], green: null, dogleg: null }; }
+function emptyHole(number){ return { number, par: 4, si: null, tees: [{ name: 'Tee', lat: null, lng: null }], green: null, dogleg: null }; }
+// Stroke index with hole-number fallback, so courses mapped before SI existed
+// (or without SI set) still allocate handicap strokes sensibly.
+function holeSi(hole){ return hole.si ?? hole.number; }
 function newEmptyCourse(){ return { id: generateId('local'), name: 'New Course', source: 'local', holes: [ emptyHole(1) ], amenities: [] }; }
 
 function normalizeHole(hole){
@@ -1148,7 +1159,8 @@ function renderHoleSidebar(){
     row.className = 'hole-row' + (i === editorState.activeHoleIndex ? ' active' : '');
     row.innerHTML = `
       <span class="hole-num">${hole.number}</span>
-      <label style="font-size:.75rem;">Par <input type="number" min="3" max="6" value="${hole.par}"></label>
+      <label style="font-size:.75rem;">Par <input type="number" data-par min="3" max="6" value="${hole.par}"></label>
+      <label style="font-size:.75rem;">SI <input type="number" data-si min="1" max="18" placeholder="${hole.number}" value="${hole.si ?? ''}"></label>
       <div class="dot-row">
         <span class="dot ${hole.tees.some(t => t.lat != null) ? 'set-tee' : ''}"></span>
         <span class="dot ${hole.green ? 'set-green' : ''}"></span>
@@ -1165,7 +1177,11 @@ function renderHoleSidebar(){
       renderPinTypeButtons();
       recenterEditorMapOnActiveHole();
     });
-    row.querySelector('input[type="number"]').addEventListener('input', e => { hole.par = parseInt(e.target.value,10) || 4; });
+    row.querySelector('[data-par]').addEventListener('input', e => { hole.par = parseInt(e.target.value,10) || 4; });
+    row.querySelector('[data-si]').addEventListener('input', e => {
+      const v = parseInt(e.target.value, 10);
+      hole.si = Number.isFinite(v) ? v : null;
+    });
     row.querySelector('[data-camera]').addEventListener('click', () => openCameraPreview(hole));
     row.querySelector('[data-delete]').addEventListener('click', () => {
       editorState.course.holes.splice(i, 1);
@@ -1608,7 +1624,7 @@ async function initPlayMap(skipIntro){
   }
 }
 
-function startRound(course, playerNames, teeName){
+function startRound(course, players, teeName, format){
   normalizeCourse(course);
   playState.course = course;
   playState.previewOnly = false;
@@ -1618,11 +1634,12 @@ function startRound(course, playerNames, teeName){
     courseId: course.id,
     courseName: course.name,
     date: new Date().toISOString(),
-    players: playerNames.map(name => ({ name })),
-    holes: course.holes.map(h => ({ number: h.number, par: h.par })),
-    scores: course.holes.map(() => playerNames.map(() => null)),
+    format: format || 'strokeplay',
+    players: players.map(p => typeof p === 'string' ? { name: p } : { name: p.name, handicap: p.handicap ?? 0 }),
+    holes: course.holes.map(h => ({ number: h.number, par: h.par, si: holeSi(h) })),
+    scores: course.holes.map(() => players.map(() => null)),
     statsTracked: getSettings().trackStats,
-    stats: course.holes.map(() => playerNames.map(() => ({ fairwayHit: null, gir: null, putts: null }))),
+    stats: course.holes.map(() => players.map(() => ({ fairwayHit: null, gir: null, putts: null }))),
     teeName: playState.selectedTeeName,
   };
   playState.currentHoleIndex = 0;
@@ -1863,8 +1880,13 @@ function openScoreEntry(holeIndex){
   playState.round.players.forEach((p, pi) => {
     const row = document.createElement('div');
     row.className = 'score-row';
+    let shotsHint = '';
+    if(isStableford(playState.round)){
+      const received = strokesReceived(p.handicap, playState.round.holes[holeIndex].si ?? hole.number, playState.round.holes.length);
+      if(received > 0) shotsHint = `<br><small style="color:var(--text-muted);font-weight:400;">receives ${received} shot${received > 1 ? 's' : ''}</small>`;
+    }
     row.innerHTML = `
-      <span class="score-row-name">${escapeHtml(p.name)}</span>
+      <span class="score-row-name">${escapeHtml(p.name)}${shotsHint}</span>
       <div class="stepper">
         <button class="stepper-btn" data-delta="-1">−</button>
         <span class="stepper-value">${scoreEntryTemp[pi]}</span>
@@ -1934,12 +1956,20 @@ function renderMiniScorecard(){
   const panel = document.getElementById('mini-scorecard');
   if(panel.hidden) return;
   const round = playState.round;
-  let html = '<p style="margin:0 0 6px;font-size:.75rem;color:var(--text-muted);">Tap a played hole to edit its scores</p>';
+  const stableford = isStableford(round);
+  let html = `<p style="margin:0 0 6px;font-size:.75rem;color:var(--text-muted);">Tap a played hole to edit its scores${stableford ? ' · shown as score (points)' : ''}</p>`;
   html += '<table><thead><tr><th>Hole</th>' + round.players.map(p=>`<th>${escapeHtml(p.name)}</th>`).join('') + '</tr></thead><tbody>';
   round.holes.forEach((h, hi) => {
     const editable = hi < playState.currentHoleIndex;
-    html += `<tr${editable ? ` data-edit-hole="${hi}" style="cursor:pointer;"` : ''}><td>${h.number} (par ${h.par})${editable ? ' ✏️' : ''}</td>` + round.players.map((p,pi) => `<td>${round.scores[hi][pi] ?? '–'}</td>`).join('') + '</tr>';
+    html += `<tr${editable ? ` data-edit-hole="${hi}" style="cursor:pointer;"` : ''}><td>${h.number} (par ${h.par})${editable ? ' ✏️' : ''}</td>` + round.players.map((p,pi) => {
+      const s = round.scores[hi][pi];
+      if(s == null) return '<td>–</td>';
+      return `<td>${s}${stableford ? ` (${playerPoints(round, hi, pi)})` : ''}</td>`;
+    }).join('') + '</tr>';
   });
+  if(stableford){
+    html += `<tr style="font-weight:700;"><td>Points</td>` + round.players.map((p,pi) => `<td>${totalPoints(round, pi)}</td>`).join('') + '</tr>';
+  }
   html += '</tbody></table>';
   panel.innerHTML = html;
   panel.querySelectorAll('[data-edit-hole]').forEach(row => {
@@ -1955,6 +1985,25 @@ let currentSummaryReadOnly = false;
 
 function totalStrokes(round, playerIndex){
   return round.scores.reduce((sum, holeScores) => sum + (holeScores[playerIndex] ?? 0), 0);
+}
+
+/* ---- Stableford points engine (always derived, never stored) ---- */
+function isStableford(round){ return round.format === 'stableford'; }
+function strokesReceived(handicap, si, holeCount){
+  const h = handicap ?? 0;
+  return Math.floor(h / holeCount) + (si <= (h % holeCount) ? 1 : 0);
+}
+function stablefordPoints(gross, par, received){
+  if(gross == null) return 0;
+  return Math.max(0, 2 + par + received - gross);
+}
+function playerPoints(round, hi, pi){
+  const hole = round.holes[hi];
+  const received = strokesReceived(round.players[pi].handicap, hole.si ?? hole.number, round.holes.length);
+  return stablefordPoints(round.scores[hi][pi], hole.par, received);
+}
+function totalPoints(round, pi){
+  return round.holes.reduce((sum, _, hi) => sum + playerPoints(round, hi, pi), 0);
 }
 function parTotal(round, uptoIndex){
   return round.holes.slice(0, uptoIndex).reduce((s,h) => s + h.par, 0);
@@ -1994,7 +2043,8 @@ function openSummary(round, { readOnly = false } = {}){
 function buildTextScorecard(round){
   const n = round.holes.length;
   const frontCount = Math.min(9, n);
-  const lines = [`⛳ WrongHole · ${round.courseName} · ${new Date(round.date).toLocaleDateString()}`];
+  const stableford = isStableford(round);
+  const lines = [`⛳ WrongHole · ${round.courseName}${stableford ? ' · Stableford' : ''} · ${new Date(round.date).toLocaleDateString()}`];
   round.players.forEach((p, pi) => {
     const total = totalStrokes(round, pi);
     const playedPar = round.holes.reduce((s,h,hi) => s + (round.scores[hi][pi] != null ? h.par : 0), 0);
@@ -2006,7 +2056,8 @@ function buildTextScorecard(round){
       const back = round.scores.slice(9).reduce((s,hs) => s + (hs[pi] ?? 0), 0);
       segments = ` — Out ${out}, In ${back}`;
     }
-    lines.push(`${p.name}: ${total} (${vsPar})${segments}`);
+    const pts = stableford ? ` · ${totalPoints(round, pi)} pts (HC ${p.handicap ?? 0})` : '';
+    lines.push(`${p.name}: ${total} (${vsPar})${segments}${pts}`);
   });
   if(round.endDate) lines.push(`Round time: ${formatDuration(new Date(round.endDate) - new Date(round.date))}`);
   return lines.join('\n');
@@ -2044,6 +2095,7 @@ function renderSummaryTable(){
   const round = currentSummaryRound;
   const n = round.holes.length;
   const frontCount = Math.min(9, n);
+  const stableford = isStableford(round);
   const wrap = document.getElementById('summary-table-wrap');
 
   function buildRows(startIdx, endIdx){
@@ -2053,7 +2105,8 @@ function renderSummaryTable(){
       rows += `<tr><td class="hole-label">${h.number}<br><small>Par ${h.par}</small></td>`;
       round.players.forEach((p, pi) => {
         const s = round.scores[hi][pi];
-        rows += `<td class="${scoreClass(s, h.par)}">${s ?? '–'}</td>`;
+        const pts = (stableford && s != null) ? `<br><small>${playerPoints(round, hi, pi)}pt</small>` : '';
+        rows += `<td class="${scoreClass(s, h.par)}">${s ?? '–'}${pts}</td>`;
       });
       rows += '</tr>';
     }
@@ -2062,14 +2115,17 @@ function renderSummaryTable(){
   function subtotalRow(startIdx, endIdx, label){
     let cells = `<td class="hole-label">${label}</td>`;
     round.players.forEach((p, pi) => {
-      let sum = 0;
-      for(let hi = startIdx; hi < endIdx; hi++){ sum += round.scores[hi][pi] ?? 0; }
-      cells += `<td>${sum}</td>`;
+      let sum = 0, pts = 0;
+      for(let hi = startIdx; hi < endIdx; hi++){
+        sum += round.scores[hi][pi] ?? 0;
+        if(stableford) pts += playerPoints(round, hi, pi);
+      }
+      cells += `<td>${sum}${stableford ? ` <small>(${pts} pts)</small>` : ''}</td>`;
     });
     return `<tr class="subtotal-row">${cells}</tr>`;
   }
 
-  const header = `<tr><th>Hole</th>${round.players.map(p=>`<th>${escapeHtml(p.name)}</th>`).join('')}</tr>`;
+  const header = `<tr><th>Hole</th>${round.players.map(p=>`<th>${escapeHtml(p.name)}${stableford ? `<br><small>HC ${p.handicap ?? 0}</small>` : ''}</th>`).join('')}</tr>`;
   let html = `<table class="scorecard"><thead>${header}</thead><tbody>`;
   html += buildRows(0, frontCount);
   html += subtotalRow(0, frontCount, 'Out');
@@ -2087,6 +2143,12 @@ function renderSummaryTable(){
   });
   parRow += '</tr>';
   html += parRow;
+  if(stableford){
+    const allPoints = round.players.map((p, pi) => totalPoints(round, pi));
+    const best = Math.max(...allPoints);
+    html += `<tr class="subtotal-row"><td class="hole-label">Points</td>` +
+      allPoints.map(pts => `<td${pts === best ? ' style="font-weight:800;"' : ''}>${pts}${pts === best ? ' 🏆' : ''}</td>`).join('') + '</tr>';
+  }
   html += '</tbody></table>';
   wrap.innerHTML = html;
 }
@@ -2127,8 +2189,26 @@ async function decodeShareHash(hash){
    ========================================================================= */
 let pendingCourseForRound = null;
 
+function getPlayerHandicaps(){ return readJSON('golf.playerHandicaps', {}); }
+function savePlayerHandicap(name, handicap){
+  const map = getPlayerHandicaps();
+  map[name] = handicap;
+  writeJSON('golf.playerHandicaps', map);
+}
+
+let setupFormat = 'strokeplay';
+function renderFormatToggle(){
+  document.querySelectorAll('#format-toggle .toggle-btn').forEach(btn => {
+    btn.classList.toggle('active-hit', btn.dataset.format === setupFormat);
+  });
+  document.getElementById('format-hint').hidden = setupFormat !== 'stableford';
+  document.querySelectorAll('#player-setup-rows [data-hc]').forEach(input => {
+    input.style.display = setupFormat === 'stableford' ? '' : 'none';
+  });
+}
+
 function renumberPlayerPlaceholders(){
-  document.querySelectorAll('#player-setup-rows .player-row input').forEach((input, i) => {
+  document.querySelectorAll('#player-setup-rows .player-row input[type="text"]').forEach((input, i) => {
     input.placeholder = `Player ${i+1} name`;
   });
 }
@@ -2139,13 +2219,23 @@ function addPlayerRow(defaultName = ''){
   row.className = 'player-row';
   const idx = wrap.children.length + 1;
   row.innerHTML = `<input type="text" placeholder="Player ${idx} name" value="${escapeHtml(defaultName)}">
+    <input type="number" data-hc placeholder="HC" min="0" max="54" title="Playing handicap" style="width:64px;flex:none;">
     <button class="btn-remove-player" type="button">✕</button>`;
+  const nameInput = row.querySelector('input[type="text"]');
+  const hcInput = row.querySelector('[data-hc]');
+  hcInput.style.display = setupFormat === 'stableford' ? '' : 'none';
+  nameInput.addEventListener('change', () => {
+    const known = getPlayerHandicaps()[nameInput.value.trim()];
+    if(known != null && hcInput.value === '') hcInput.value = known;
+  });
   row.querySelector('.btn-remove-player').addEventListener('click', () => { row.remove(); renumberPlayerPlaceholders(); });
   wrap.appendChild(row);
 }
 function openPlayerSetup(course){
   pendingCourseForRound = course;
   normalizeCourse(course);
+  setupFormat = getSettings().lastFormat === 'stableford' ? 'stableford' : 'strokeplay';
+  renderFormatToggle();
   const teeNames = [...new Set((course.holes[0]?.tees || []).map(t => t.name))];
   const teeRow = document.getElementById('player-setup-tee-row');
   if(teeNames.length > 1){
@@ -2342,13 +2432,26 @@ function wireGlobalEvents(){
   // player setup
   document.getElementById('player-setup-add').addEventListener('click', () => addPlayerRow());
   document.getElementById('player-setup-cancel').addEventListener('click', () => closeModal('modal-player-setup'));
+  document.querySelectorAll('#format-toggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setupFormat = btn.dataset.format;
+      const s = getSettings(); s.lastFormat = setupFormat; saveSettings(s);
+      renderFormatToggle();
+    });
+  });
   document.getElementById('player-setup-start').addEventListener('click', () => {
-    const names = [...document.querySelectorAll('#player-setup-rows input')].map((el,i) => el.value.trim() || `Player ${i+1}`);
-    if(!names.length){ toast('Add at least one player'); return; }
+    const players = [...document.querySelectorAll('#player-setup-rows .player-row')].map((row, i) => {
+      const name = row.querySelector('input[type="text"]').value.trim() || `Player ${i+1}`;
+      const hcRaw = parseInt(row.querySelector('[data-hc]').value, 10);
+      const handicap = Number.isFinite(hcRaw) ? Math.min(54, Math.max(0, hcRaw)) : 0;
+      return { name, handicap };
+    });
+    if(!players.length){ toast('Add at least one player'); return; }
+    if(setupFormat === 'stableford') players.forEach(p => savePlayerHandicap(p.name, p.handicap));
     const teeRow = document.getElementById('player-setup-tee-row');
     const teeName = teeRow.hidden ? null : document.getElementById('player-setup-tee-select').value;
     closeModal('modal-player-setup');
-    startRound(pendingCourseForRound, names, teeName);
+    startRound(pendingCourseForRound, players, teeName, setupFormat);
   });
 
   // summary
