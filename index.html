@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>WrongHole — Golf Round Tracker</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#1e5631">
 <style>
   :root{
     --green-primary:#1e5631;
@@ -314,6 +317,7 @@
     <button class="units-toggle" id="settings-btn" title="Settings">⚙ Settings</button>
   </header>
   <div class="home-content">
+    <div id="resume-round-banner" hidden></div>
     <div class="home-search-row">
       <input type="text" id="home-course-search" placeholder="Search by course name, address, or postcode">
       <button class="btn btn-primary" id="home-course-search-btn">Search</button>
@@ -429,11 +433,13 @@
     <div class="readonly-banner no-print" id="summary-readonly-banner" hidden>Viewing a shared scorecard — not saved to your device.</div>
     <div class="summary-actions no-print">
       <button class="btn btn-primary" id="summary-share-btn">Share</button>
+      <button class="btn btn-ghost" id="summary-copy-text-btn">Copy as text</button>
       <button class="btn btn-ghost" id="summary-print-btn">Print / Image view</button>
     </div>
     <div class="share-result no-print" id="summary-share-result" hidden>
       <input type="text" id="summary-share-output" readonly>
     </div>
+    <p id="summary-meta" style="color:var(--text-muted);font-size:.9rem;margin:0 0 10px;"></p>
     <div id="summary-table-wrap"></div>
     <div id="summary-stats-wrap"></div>
   </div>
@@ -627,7 +633,7 @@ function computeCameraForHole(hole, teeName){
 /* =========================================================================
    4. STORAGE — localStorage + courses.json
    ========================================================================= */
-const LS_KEYS = { localCourses: 'golf.courses.local', rounds: 'golf.rounds', settings: 'golf.settings', clubs: 'golf.clubs', favorites: 'golf.favorites' };
+const LS_KEYS = { localCourses: 'golf.courses.local', rounds: 'golf.rounds', settings: 'golf.settings', clubs: 'golf.clubs', favorites: 'golf.favorites', activeRound: 'golf.activeRound' };
 function readJSON(key, fallback){ try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }catch{ return fallback; } }
 function writeJSON(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
 
@@ -687,6 +693,20 @@ function getBestRoundForCourse(courseId){
   });
   return best;
 }
+
+/* ---- in-progress round persistence (mobile browsers kill background tabs;
+   without this a 4-hour round is lost if the tab dies mid-round) ---- */
+function saveActiveRound(){
+  if(!playState.round || playState.previewOnly) return;
+  writeJSON(LS_KEYS.activeRound, {
+    course: playState.course,
+    round: playState.round,
+    currentHoleIndex: playState.currentHoleIndex,
+    selectedTeeName: playState.selectedTeeName,
+  });
+}
+function getActiveRound(){ return readJSON(LS_KEYS.activeRound, null); }
+function clearActiveRound(){ localStorage.removeItem(LS_KEYS.activeRound); }
 
 function getFavorites(){ return new Set(readJSON(LS_KEYS.favorites, [])); }
 function toggleFavorite(id){
@@ -903,7 +923,34 @@ function onLogoTap(){
    ========================================================================= */
 let courseById = new Map();
 
+function renderResumeBanner(){
+  const banner = document.getElementById('resume-round-banner');
+  const saved = getActiveRound();
+  if(!saved){ banner.hidden = true; banner.innerHTML = ''; return; }
+  const holeNum = saved.round.holes[saved.currentHoleIndex]?.number ?? saved.currentHoleIndex + 1;
+  banner.innerHTML = `
+    <div class="course-card" style="border-left:4px solid var(--amber);">
+      <div class="course-card-info">
+        <h3>⏳ Round in progress</h3>
+        <p>${escapeHtml(saved.round.courseName)} · hole ${holeNum} · ${saved.round.players.map(p=>escapeHtml(p.name)).join(', ')}</p>
+      </div>
+      <div class="course-card-actions">
+        <button class="btn btn-primary" data-resume>Resume</button>
+        <button class="btn btn-ghost" data-discard>Discard</button>
+      </div>
+    </div>`;
+  banner.querySelector('[data-resume]').addEventListener('click', resumeActiveRound);
+  banner.querySelector('[data-discard]').addEventListener('click', () => {
+    if(confirm('Discard the unfinished round? Its scores will be lost.')){
+      clearActiveRound();
+      renderResumeBanner();
+    }
+  });
+  banner.hidden = false;
+}
+
 async function renderHome(){
+  renderResumeBanner();
   const courses = await loadCourseLibrary();
   courseById = new Map(courses.map(c => [c.id, c]));
   const favs = getFavorites();
@@ -1537,12 +1584,12 @@ function continueFromIntro(){
   jumpToHole(0, true);
 }
 
-async function initPlayMap(){
+async function initPlayMap(skipIntro){
   const wrap = document.getElementById('play-map-wrap');
   wrap.innerHTML = '';
   if(!MAPS_CONFIGURED){ mapsBanner(wrap); return; }
   const mapDiv = document.createElement('div'); mapDiv.className = 'map-el'; wrap.appendChild(mapDiv);
-  const intro = computeProShopIntro(playState.course, playState.selectedTeeName);
+  const intro = skipIntro ? null : computeProShopIntro(playState.course, playState.selectedTeeName);
   const hole = playState.course.holes[0];
   const camera = intro ? intro.camera : (computeCameraForHole(hole, playState.selectedTeeName) || { center: { lat: 51.0, lng: -1.3 }, zoom: 17, heading: 0, tilt: 0 });
   playState.map = await createMap(mapDiv, camera);
@@ -1582,12 +1629,29 @@ function startRound(course, playerNames, teeName){
   document.getElementById('mini-scorecard').hidden = true;
   updatePlayModeChrome();
   showScreen('play');
+  saveActiveRound();
   if(getSettings().gpsEnabled) startGpsWatch();
   loadCourseWeather(course);
   initPlayMap().then(() => {
     const intro = computeProShopIntro(playState.course, playState.selectedTeeName);
     if(intro) showProShopIntro(intro); else renderPlayHUD();
   });
+}
+
+function resumeActiveRound(){
+  const saved = getActiveRound();
+  if(!saved) return;
+  playState.course = saved.course;
+  playState.round = saved.round;
+  playState.previewOnly = false;
+  playState.selectedTeeName = saved.selectedTeeName;
+  playState.currentHoleIndex = saved.currentHoleIndex;
+  document.getElementById('mini-scorecard').hidden = true;
+  updatePlayModeChrome();
+  showScreen('play');
+  if(getSettings().gpsEnabled) startGpsWatch();
+  loadCourseWeather(saved.course);
+  initPlayMap(true).then(() => jumpToHole(saved.currentHoleIndex, false));
 }
 
 function startPreview(course){
@@ -1843,8 +1907,11 @@ function confirmScoreEntry(){
   closeModal('modal-score-entry');
   if(holeIndex < playState.course.holes.length - 1){
     jumpToHole(holeIndex + 1, true);
+    saveActiveRound();
   } else {
     stopGpsWatch();
+    playState.round.endDate = new Date().toISOString();
+    clearActiveRound();
     saveRound(playState.round);
     openSummary(playState.round, { readOnly: false });
   }
@@ -1884,15 +1951,47 @@ function scoreClass(strokes, par){
   return 'score-double';
 }
 
+function formatDuration(ms){
+  const mins = Math.round(ms / 60000);
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 function openSummary(round, { readOnly = false } = {}){
   currentSummaryRound = round;
   currentSummaryReadOnly = readOnly;
   document.getElementById('summary-title').textContent = round.courseName;
   document.getElementById('summary-readonly-banner').hidden = !readOnly;
   document.getElementById('summary-share-result').hidden = true;
+  let meta = new Date(round.date).toLocaleDateString();
+  if(round.endDate){
+    meta += ` · Round time: ${formatDuration(new Date(round.endDate) - new Date(round.date))}`;
+  }
+  document.getElementById('summary-meta').textContent = meta;
   renderSummaryTable();
   renderStatsBlock();
   showScreen('summary');
+}
+
+function buildTextScorecard(round){
+  const n = round.holes.length;
+  const frontCount = Math.min(9, n);
+  const lines = [`⛳ WrongHole · ${round.courseName} · ${new Date(round.date).toLocaleDateString()}`];
+  round.players.forEach((p, pi) => {
+    const total = totalStrokes(round, pi);
+    const playedPar = round.holes.reduce((s,h,hi) => s + (round.scores[hi][pi] != null ? h.par : 0), 0);
+    const diff = total - playedPar;
+    const vsPar = diff === 0 ? 'E' : (diff > 0 ? `+${diff}` : `${diff}`);
+    let segments = '';
+    if(n > 9){
+      const out = round.scores.slice(0, frontCount).reduce((s,hs) => s + (hs[pi] ?? 0), 0);
+      const back = round.scores.slice(9).reduce((s,hs) => s + (hs[pi] ?? 0), 0);
+      segments = ` — Out ${out}, In ${back}`;
+    }
+    lines.push(`${p.name}: ${total} (${vsPar})${segments}`);
+  });
+  if(round.endDate) lines.push(`Round time: ${formatDuration(new Date(round.endDate) - new Date(round.date))}`);
+  return lines.join('\n');
 }
 
 function renderStatsBlock(){
@@ -2206,6 +2305,7 @@ function wireGlobalEvents(){
   document.getElementById('hud-exit').addEventListener('click', () => {
     if(playState.previewOnly || confirm('Exit this round? Unsaved progress will be lost.')){
       stopGpsWatch();
+      if(!playState.previewOnly) clearActiveRound();
       showScreen('home'); renderHome();
     }
   });
@@ -2246,6 +2346,12 @@ function wireGlobalEvents(){
       await navigator.clipboard.writeText(url).catch(()=>{});
       toast('Share link copied');
     }catch{ toast('Could not build share link'); }
+  });
+  document.getElementById('summary-copy-text-btn').addEventListener('click', async () => {
+    try{
+      await navigator.clipboard.writeText(buildTextScorecard(currentSummaryRound));
+      toast('Scorecard copied');
+    }catch{ toast('Copy failed'); }
   });
   document.getElementById('summary-print-btn').addEventListener('click', () => window.print());
 }
