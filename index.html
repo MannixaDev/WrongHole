@@ -146,7 +146,7 @@
   .osm-search-row input{flex:1;min-width:150px;padding:8px;border-radius:8px;border:1px solid var(--border);}
 
   /* ---- play mode ---- */
-  #screen-play{position:fixed;inset:0;height:100dvh;background:#0d2818;z-index:20;}
+  #screen-play{position:fixed;top:0;left:0;right:0;height:var(--app-vh, 100dvh);min-height:0;background:#0d2818;z-index:20;}
   #play-map-wrap{position:absolute;inset:0;}
   .play-hud{position:absolute;top:0;left:0;right:0;padding:14px;display:flex;justify-content:space-between;align-items:flex-start;
     background:linear-gradient(rgba(0,0,0,.55),transparent);color:#fff;pointer-events:none;}
@@ -168,7 +168,7 @@
   .mini-scorecard th,.mini-scorecard td{padding:4px 6px;text-align:center;border-bottom:1px solid var(--border);}
 
   /* ---- modals ---- */
-  .modal{position:fixed;inset:0;height:100dvh;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;z-index:50;}
+  .modal{position:fixed;top:0;left:0;right:0;height:var(--app-vh, 100dvh);background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;z-index:50;}
   @media(min-width:640px){ .modal{align-items:center;} }
   .modal-content{background:var(--cream);width:100%;max-width:480px;border-radius:20px 20px 0 0;padding:20px;padding-bottom:calc(20px + env(safe-area-inset-bottom));max-height:88vh;overflow-y:auto;}
   @media(min-width:640px){ .modal-content{border-radius:16px;} }
@@ -263,6 +263,25 @@
     var theme = saved || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
     document.documentElement.dataset.theme = theme;
   }catch(e){}
+})();
+(function(){
+  // Some mobile browsers (notably several Android OEM Chromium forks) don't
+  // fully support dvh, and still report the "large" viewport that includes
+  // their own address bar / gesture area, cutting off fixed-bottom content.
+  // The Visual Viewport API is older and much more broadly/reliably
+  // supported for tracking the actual visible area, so use it as an
+  // override when available.
+  function setAppVh(){
+    var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    document.documentElement.style.setProperty('--app-vh', h + 'px');
+  }
+  setAppVh();
+  window.addEventListener('resize', setAppVh);
+  window.addEventListener('orientationchange', setAppVh);
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize', setAppVh);
+    window.visualViewport.addEventListener('scroll', setAppVh);
+  }
 })();
 </script>
 </head>
