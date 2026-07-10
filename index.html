@@ -47,7 +47,7 @@
   /* ---- shared chrome ---- */
   .header-bar{
     background:var(--green-primary);color:var(--white);
-    padding:14px 16px;display:flex;align-items:center;justify-content:space-between;
+    padding:14px 16px;display:flex;align-items:center;justify-content:flex-end;
     position:sticky;top:0;z-index:5;
   }
   .header-bar h1{font-size:1.2rem;}
@@ -239,7 +239,7 @@
   }
 
   /* ---- logo & splash ---- */
-  .logo-header{height:32px;width:auto;display:block;}
+  .logo-header{height:32px;width:auto;display:block;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);}
   @media(min-width:860px){ .logo-header{height:48px;} }
   #splash-screen{
     position:fixed;inset:0;height:100dvh;z-index:9999;
