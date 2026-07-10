@@ -1846,8 +1846,12 @@ function buildStatsRow(hole, stats){
   return statsRow;
 }
 
-function openScoreEntry(){
-  const holeIndex = playState.currentHoleIndex;
+let scoreEntryHoleIndex = 0;
+
+function openScoreEntry(holeIndex){
+  // Guard: the Hole Complete button passes the click event as the first arg.
+  if(typeof holeIndex !== 'number') holeIndex = playState.currentHoleIndex;
+  scoreEntryHoleIndex = holeIndex;
   const hole = playState.course.holes[holeIndex];
   const scores = playState.round.scores[holeIndex];
   scoreEntryTemp = playState.round.players.map((_, pi) => scores[pi] ?? hole.par);
@@ -1883,18 +1887,28 @@ function openScoreEntry(){
     rows.appendChild(row);
     if(trackStats) rows.appendChild(buildStatsRow(hole, statsEntryTemp[pi]));
   });
-  document.getElementById('score-entry-title').textContent = `Hole ${hole.number} · Par ${hole.par}`;
+  const isPastEdit = holeIndex < playState.currentHoleIndex;
+  document.getElementById('score-entry-title').textContent =
+    `Hole ${hole.number} · Par ${hole.par}${isPastEdit ? ' · editing' : ''}`;
   document.getElementById('score-entry-next-btn').textContent =
-    holeIndex === playState.course.holes.length - 1 ? 'Finish Round' : 'Next Hole';
+    isPastEdit ? 'Save' : (holeIndex === playState.course.holes.length - 1 ? 'Finish Round' : 'Next Hole');
   openModal('modal-score-entry');
 }
 
 function confirmScoreEntry(){
-  const holeIndex = playState.currentHoleIndex;
+  const holeIndex = scoreEntryHoleIndex;
   const hole = playState.course.holes[holeIndex];
+  const isPastEdit = holeIndex < playState.currentHoleIndex;
   playState.round.scores[holeIndex] = scoreEntryTemp.slice();
   if(playState.round.statsTracked){
     playState.round.stats[holeIndex] = statsEntryTemp.slice();
+  }
+  closeModal('modal-score-entry');
+  if(isPastEdit){
+    saveActiveRound();
+    renderMiniScorecard();
+    toast(`Hole ${hole.number} updated`);
+    return;
   }
   if(scoreEntryTemp.some(s => s === 1)){
     fireConfetti();
@@ -1904,7 +1918,6 @@ function confirmScoreEntry(){
     const joke = badScoreReaction(worst, hole.par);
     if(joke) toast(joke);
   }
-  closeModal('modal-score-entry');
   if(holeIndex < playState.course.holes.length - 1){
     jumpToHole(holeIndex + 1, true);
     saveActiveRound();
@@ -1921,12 +1934,17 @@ function renderMiniScorecard(){
   const panel = document.getElementById('mini-scorecard');
   if(panel.hidden) return;
   const round = playState.round;
-  let html = '<table><thead><tr><th>Hole</th>' + round.players.map(p=>`<th>${escapeHtml(p.name)}</th>`).join('') + '</tr></thead><tbody>';
+  let html = '<p style="margin:0 0 6px;font-size:.75rem;color:var(--text-muted);">Tap a played hole to edit its scores</p>';
+  html += '<table><thead><tr><th>Hole</th>' + round.players.map(p=>`<th>${escapeHtml(p.name)}</th>`).join('') + '</tr></thead><tbody>';
   round.holes.forEach((h, hi) => {
-    html += `<tr><td>${h.number} (par ${h.par})</td>` + round.players.map((p,pi) => `<td>${round.scores[hi][pi] ?? '–'}</td>`).join('') + '</tr>';
+    const editable = hi < playState.currentHoleIndex;
+    html += `<tr${editable ? ` data-edit-hole="${hi}" style="cursor:pointer;"` : ''}><td>${h.number} (par ${h.par})${editable ? ' ✏️' : ''}</td>` + round.players.map((p,pi) => `<td>${round.scores[hi][pi] ?? '–'}</td>`).join('') + '</tr>';
   });
   html += '</tbody></table>';
   panel.innerHTML = html;
+  panel.querySelectorAll('[data-edit-hole]').forEach(row => {
+    row.addEventListener('click', () => openScoreEntry(parseInt(row.dataset.editHole, 10)));
+  });
 }
 
 /* =========================================================================
@@ -2378,6 +2396,9 @@ async function init(){
   hideSplash();
 }
 document.addEventListener('DOMContentLoaded', init);
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
 </script>
 </body>
 </html>
